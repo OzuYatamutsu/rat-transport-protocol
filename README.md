@@ -95,3 +95,29 @@ Sends a byte-stream from client to server or from server to client.
 Returns the byte-stream result of reading `buffer_size` bytes from an established socket.
 #### `close()`
 Attempts to cleanly close a socket and shut down the connection stream. Sockets which are closed should be discarded, as they cannot be reopened.
+## State
+The RAT connection stream timeline can be separated into two distinct stages: connection establishment and connection closing.
+### Connection establishment
+#### `SOCK_UNOPENED`
+The initial state following the creation of a socket on the client or server. Unopened sockets do not have any connection or addressing information, and cannot be used to send data until it is opened by a call to `connect(address, port, keepalive_time)` on the client or `listen(address, port, num_connections)` on the server.
+#### `SOCK_SERVOPEN`
+The state on the server following a call to `listen(address, port, num_connections)` on the server. This server is currently listening for connections.
+#### `SOCK_HLOSENT`
+The state on the client following a call to `connect(address, port, keepalive_time)` on the client. This client has opened its socket, and has sent a `HLO` message to the server to attempt to establish a connection.
+#### `SOCK_HLORECV`
+The state on the server after its opened socket has received a `HLO` message from a client. This server will respond with a `ACK, HLO` message, containing a unique stream ID assigned to the client by this server.
+#### `SOCK_ESTABLISHED`
+The state on the client after receiving a `ACK, HLO` message from the server, and the state on the server following an `ACK` reply to the `ACK, HLO` sent from the client to the server, containing the client’s unique stream ID. This socket is now ready to send data. If a keep-alive directive was specified on the client when it initially opened its socket, the client will attempt to remain in this state until it sends or receives any message, including keep-alives.
+### Connection closing
+#### `SOCK_BYESENT`
+The state on the client or server following a call to `close()`. This call places the socket in a *half-open* state, where the client or server can no longer send data, but can continue to receive data from the server and send `ACK` responses. This starts the `RAT_BYE_TIMEOUT` timer, which counts down from the receipt of the last RAT segment - the client or server will remain in this state until either the server acknowledges the connection close with a `ACK, BYE` message, or `RAT_BYE_TIMEOUT` expires.
+#### `SOCK_BYERECV`
+The state on the client or server after its socket has received a `BYE` message from the other end on an established socket. The client or server will continue to send data to complete its current window, and will send a `ACK, BYE` message upon receiving the last `ACK` from the other end at the conclusion of the final window. Once sent, this starts the `RAT_BYE_TIMEOUT` timer, after which the socket transitions to the `SOCK_CLOSED` state.
+#### `SOCK_CLOSED`
+The state on the client or server following an `ACK, BYE` response from the server or the expiration of a `RAT_BYE_TIMEOUT` timer. This socket is closed and cannot be used to send data or re-establish a connection and should be deallocated from memory.
+### Timers
+RAT maintains two main timers to handle cases where it does not receive an expected response from the other side. The exact values of these timers are based on how the RAT protocol is implemented on the client or server.
+#### `RAT_REPLY_TIMEOUT`
+A timer started after the receipt of the last message. This timer resets when any message is received (such as data or keep-alive messages). When it expires, the socket transitions immediately to the `SOCK_CLOSED` state.
+#### `RAT_BYE_TIMEOUT`
+A timer started after the receipt of the last message in the `SOCK_BYESENT` or `SOCK_BYERECV` states (which can include a `BYE` message itself). This should be less than the `RAT_REPLY_TIMEOUT` timer. When it expires, the socket transitions immediately to the `SOCK_CLOSED` state.
