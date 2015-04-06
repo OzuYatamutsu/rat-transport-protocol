@@ -31,7 +31,7 @@ A sequence number is an **16-bit** number that identifies the current segment in
 #### Flags
 The flags field is a **7-bit** series of flag bits which identify specific RAT overhead message types. Field bits are specified in order below, and are also generally ordered from most-to-least used.
 
-Field bits may also include additional overhead data in the payload - the amount of additional overhead data carried, in bytes, is specified in the data offset header. If field bits do not require additional overhead data, they can be set along with data streams.
+Field bits may also include additional overhead data in the payload - the amount of additional overhead data carried, in bytes, is specified in the data offset headnumcoer. If field bits do not require additional overhead data, they can be set along with data streams.
 ##### ACK
 If this bit is set, this message is an acknowledgement that a message or series of messages were receieved successfully.
 ##### NACK
@@ -79,11 +79,11 @@ A RAT API implementation must implement the following methods:
 
 ### Server
 #### `listen(address, port, num_connections)`
-Listens for a maximum of `numconnections` connections on `port` at address `port`. This allocates space for a connection queue, and new connections on this socket will be placed in this queue.
+Listens for a maximum of `num_connections` connections on `port` at address `address`. This allocates space for a connection queue, and new connections on this socket will be placed in this queue.
 #### `accept()`
 Accepts a connection from a connection queue and returns a new client socket to use. This removes the connection from the connection queue. If there are no connections in the queue, this is a blocking I/O call, and the program will sleep until a connection is available to accept. The client socket will have an established connection to the client.
 #### `allow_keepalives(bool)`
-Directs the socket to follow or ignore keep-alive messages. The default is to allow keep-alives. This setting can be set on individual client sockets returned from \texttt{accept()}, or for all clients on a server socket by setting it on the server socket instead.
+Directs the socket to follow or ignore keep-alive messages. The default is to allow keep-alives. This setting can be set on individual client sockets returned from `accept()` or for all clients on a server socket by setting it on the server socket instead.
 
 ### Client
 #### `connect(address, port, send_keepalives)`
