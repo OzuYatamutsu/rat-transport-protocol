@@ -83,7 +83,7 @@ Listens for a maximum of `num_connections` connections on `port` at address `add
 #### `accept()`
 Accepts a connection from a connection queue and returns a new client socket to use. This removes the connection from the connection queue. If there are no connections in the queue, this is a blocking I/O call, and the program will sleep until a connection is available to accept. The client socket will have an established connection to the client.
 #### `allow_keepalives(bool)`
-Directs the socket to follow or ignore keep-alive messages. The default is to allow keep-alives. This setting can be set on individual client sockets returned from \texttt{accept()}, or for all clients on a server socket by setting it on the server socket instead.
+Directs the socket to follow or ignore keep-alive messages. The default is to allow keep-alives. This setting can be set on individual client sockets returned from `accept()` or for all clients on a server socket by setting it on the server socket instead.
 
 ### Client
 #### `connect(address, port, send_keepalives)`
