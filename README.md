@@ -79,7 +79,7 @@ A RAT API implementation must implement the following methods:
 
 ### Server
 #### `listen(address, port, num_connections)`
-Listens for a maximum of `num_connections` connections on `port` at address `port`. This allocates space for a connection queue, and new connections on this socket will be placed in this queue.
+Listens for a maximum of `num_connections` connections on `port` at address `address`. This allocates space for a connection queue, and new connections on this socket will be placed in this queue.
 #### `accept()`
 Accepts a connection from a connection queue and returns a new client socket to use. This removes the connection from the connection queue. If there are no connections in the queue, this is a blocking I/O call, and the program will sleep until a connection is available to accept. The client socket will have an established connection to the client.
 #### `allow_keepalives(bool)`
