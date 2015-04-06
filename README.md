@@ -121,3 +121,10 @@ RAT maintains two main timers to handle cases where it does not receive an expec
 A timer started after the receipt of the last message. This timer resets when any message is received (such as data or keep-alive messages). When it expires, the socket transitions immediately to the `SOCK_CLOSED` state.
 #### `RAT_BYE_TIMEOUT`
 A timer started after the receipt of the last message in the `SOCK_BYESENT` or `SOCK_BYERECV` states (which can include a `BYE` message itself). This should be less than the `RAT_REPLY_TIMEOUT` timer. When it expires, the socket transitions immediately to the `SOCK_CLOSED` state.
+## Timeline
+A visualization of the above states is included below.
+### Connection establishment
+### Data transfer
+### Connection closing
+## Finite-state machine
+An equivalent representation of the above diagrams in a finite-state machine format is detailed below.
