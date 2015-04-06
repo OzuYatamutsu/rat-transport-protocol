@@ -13,6 +13,7 @@ RAT includes multiple methods of detecting packet corruption:
  * **A single sequence number**
  * **A simple checksum** of a set of message flag fields
  * **UDP's checksum**, as RAT is built on top of UDP
+
 ##### Duplicate packets?
 If a segment is received with a sequence number which has already passed, the segment is discarded.
 ##### Out-of-order packets?
@@ -71,3 +72,26 @@ The length field is a **16-bit** field that specifies the total length, in bytes
 
 ##### Checksum
 The checksum field is a **16-bit** field that is used for error-checking of the UDP header and payload.
+
+## Methods
+A RAT API implementation must implement the following methods:
+
+### Server
+#### `listen(address, port, num_connections)`
+Listens for a maximum of `numconnections` connections on `port` at address `port`. This allocates space for a connection queue, and new connections on this socket will be placed in this queue.
+#### `accept()`
+Accepts a connection from a connection queue and returns a new client socket to use. This removes the connection from the connection queue. If there are no connections in the queue, this is a blocking I/O call, and the program will sleep until a connection is available to accept. The client socket will have an established connection to the client.
+#### `allow_keepalives(bool)`
+Directs the socket to follow or ignore keep-alive messages. The default is to allow keep-alives. This setting can be set on individual client sockets returned from \texttt{accept()}, or for all clients on a server socket by setting it on the server socket instead.
+
+### Client
+#### `connect(address, port, send_keepalives)`
+Attempts to connect to a server socket on port `port` at address `address`. If successful, the current socket will have an established connection to the server. An optional keep-alive directive can be set - this specifies that the client should send keep-alive messages from client to server after the last ACK message was received, while a connection is still established. A keep-alive message is a request to keep a socket open when no data is currently being sent. The default value is *false* (don’t send keep-alives), and a server can choose to ignore keep-alive messages if desired.
+
+### Server and client
+#### `send(bytes)`
+Sends a byte-stream from client to server or from server to client.
+#### `recv(buffer_size)`
+Returns the byte-stream result of reading `buffer_size` bytes from an established socket.
+#### `close()`
+Attempts to cleanly close a socket and shut down the connection stream. Sockets which are closed should be discarded, as they cannot be reopened.
