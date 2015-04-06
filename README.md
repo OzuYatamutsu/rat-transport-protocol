@@ -57,7 +57,7 @@ Some examples of this additional data are:
  * **SWIN**: An 16-bit number that specifies the new requested window size.
 
 #### Flag checksum
-A field that simply stores the sum of the flags and data offset fields as a \textbf{3-bit unsigned integer} (overflow is expected). If the value in this field does not match the 3-bit sum of the fields, an error is detected and the segment is discarded.
+A field that simply stores the sum of the flags and data offset fields as a **3-bit unsigned integer** (overflow is expected). If the value in this field does not match the 3-bit sum of the fields, an error is detected and the segment is discarded.
 
 #### UDP header
 Other methods and values (such as service selection, payload length, and UDP checksum) are handled by the underlying UDP header:
