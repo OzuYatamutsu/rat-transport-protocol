@@ -21,7 +21,7 @@ RAT segments include a _sequence number_, which tracks the order that they were 
 ##### Bi-directional data transfer?
 All RAT streams are _uni-directional_ at any given point in time. Client and servers can send and receive on a single stream, but these operations cannot occur at the same time. However, additional connections can be opened (with different stream IDs) which can allow for bi-directional data transfer in parallel.
 ## Header
-The full RAT header is 2 bytes wide, and is built on top of a UDP datagram:
+The full RAT header is 8 bytes in size, and is built on top of a UDP datagram:
 
 <img src="https://raw.githubusercontent.com/OzuYatamutsu/rat-transport-protocol/master/img/latex-rendered-datagram.png" />
 #### Stream ID
