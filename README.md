@@ -22,7 +22,8 @@ RAT segments include a _sequence number_, which tracks the order that they were 
 All RAT streams are _uni-directional_ at any given point in time. Client and servers can send and receive on a single stream, but these operations cannot occur at the same time. However, additional connections can be opened (with different stream IDs) which can allow for bi-directional data transfer in parallel.
 ## Header
 The full RAT header is 2 bytes wide, and is built on top of a UDP datagram:
-<IMG1 HERE>
+
+<img src="https://raw.githubusercontent.com/OzuYatamutsu/rat-transport-protocol/master/img/latex-rendered-datagram.png" />
 #### Stream ID
 The stream ID is temporally unique **32-bit** identifier used to uniquely identify an active data stream at any moment in time. Stream IDs are *server-significant*, and are assigned and used by the server to uniquely identify a connection stream to a specific client. In the initial connection from client to server, this value is set to 0 by the client until the server assigns one.
 #### Sequence number
@@ -124,7 +125,20 @@ A timer started after the receipt of the last message in the `SOCK_BYESENT` or `
 ## Timeline
 A visualization of the above states is included below.
 ### Connection establishment
+<img src="https://raw.githubusercontent.com/OzuYatamutsu/rat-transport-protocol/master/img/timeline-open.png" />
+
+A RAT protocol connection negotiation. Once negotiation is complete, both client and server sockets will be in the `SOCK_ESTABLISHED` state, ready to send data.
 ### Data transfer
+<img src="https://raw.githubusercontent.com/OzuYatamutsu/rat-transport-protocol/master/img/timeline-dataxfer.png" />
+
+A RAT protocol data transfer timeline. RAT supports reordering of out-of-order segment delivery, as well as selective retransmission of lost segments as part of the next window.
 ### Connection closing
+<img src="https://raw.githubusercontent.com/OzuYatamutsu/rat-transport-protocol/master/img/timeline-close.png" />
+
+A RAT protocol connection-close negotiation. Once a client enters the `SOCK_BYESENT` state, the socket is half-open; a client may continue to receive data, but can no longer send (except for RAT overhead messages, such as acknowledgments).
 ## Finite-state machine
 An equivalent representation of the above diagrams in a finite-state machine format is detailed below.
+
+<img src="https://raw.githubusercontent.com/OzuYatamutsu/rat-transport-protocol/master/img/fsm.png" />
+
+A RAT protocol finite-state machine. Note that expiration of the `RAT_REPLY_TIMEOUT` timer at *any point in the machine except `SOCK_UNOPENED`, `SOCK_BYESENT`, `SOCK_BYERECV`, and `SOCK_CLOSED`* will result in a transition to the `SOCK_CLOSED` state.
