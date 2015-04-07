@@ -167,7 +167,8 @@ class RatSocket:
         print("DEBUG: SOCK_HLOSENT")
 
         # Receive HLO, ACK and set stream_id and seq_num
-        segment = self.decode_rat_header(self.udp.recvfrom(RAT_HEADER_SIZE))
+        segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+        segment = self.decode_rat_header(segment)
         self.stream_id = segment["stream_id"]
         self.seq_num = segment["seq_num"]
 
@@ -260,11 +261,11 @@ class RatSocket:
         if (len(byte_stream) != RAT_HEADER_SIZE):
             raise IOError(ERR_HEADER_INVALID)
 
-        stream_id = int(byte_stream[0:16])
-        seq_num = int(byte_stream[16:32])
-        length = int(byte_stream[32:48])
+        stream_id = int(byte_stream[0:16], 2)
+        seq_num = int(byte_stream[16:32], 2)
+        length = int(byte_stream[32:48], 2)
         flags = str(byte_stream[48:56], "utf-8")
-        offset = int(byte_stream[56:64])
+        offset = int(byte_stream[56:64], 2)
 
         return {"stream_id": stream_id, "seq_num": seq_num, 
                 "length": length, "flags": flags, "offset": offset}
@@ -308,9 +309,10 @@ class RatSocket:
         return output
 
     def zero_pad(self, num, length):
-        '''Adds leading zeros to num to pad it to given length.'''
+        '''Converts an input number into a binary number, and adds 
+        leading zeros to num to pad it to given length.'''
 
-        num = str(num)
+        num = bin(int(num))[2:]
         padding = length - len(num)
 
         if (padding < 0):
@@ -333,7 +335,7 @@ class RatSocket:
         header = header + self.zero_pad(length, 16)
 
         # Add flags
-        header = header + self.zero_pad(flags, 8)
+        header = header + bytes(flags, "utf-8")
 
         # Add offset
         header = header + self.zero_pad(offset, 8)
