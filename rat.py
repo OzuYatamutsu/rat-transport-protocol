@@ -5,6 +5,7 @@ from random import randrange
 ## Other values
 RAT_MAX_SEQ_NUM = 65535
 RAT_MAX_STREAM_ID = 65535
+RAT_RETRY_TIMES = 5
 
 ## Header sizes, in bits
 RAT_HEADER_SIZE = 64
@@ -36,6 +37,7 @@ DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent HLO, ACK to client."
 DEBUG_SERV_RECV_ACK = DEBUG_PREFIX + "Receieved ACK (SOCK_ESTABLISHED)."
 DEBUG_SENT_ACK = DEBUG_PREFIX + "Sent ACK."
 DEBUG_RECV_ACK = DEBUG_PREFIX + "Receieved ACK."
+DEBUG_RETRY_FAIL = DEBUG_PREFIX + "Too many failed retransmits; giving up."
 
 ## RAT connection states
 class State(Enum):
@@ -112,9 +114,11 @@ class RatSocket:
         connection to the client.'''
 
         self.state_check(State.SOCK_SERVOPEN)
+        retry_times = RAT_RETRY_TIMES
 
         # Start listening for HLO
         if self.debug_mode: print(DEBUG_LISTEN_HLO)
+
         hlo, address = self.udp.recvfrom(RAT_HEADER_SIZE)
         hlo = self.decode_rat_header(hlo)
 
@@ -134,24 +138,28 @@ class RatSocket:
             client.seq_num = client.seq_num + 1
 
             # Send ACK, HLO
-            if self.debug_mode: print(DEBUG_SERV_SENT_HLOACK)
-            response = client.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
-            client.udp.sendto(response, client.remote_addr)
+            ack = {}
+            while (retry_times != 0 and not flag_header(ack, Flag.ACK)):
+                try:
+                    if self.debug_mode: print(DEBUG_SERV_SENT_HLOACK)
+                    response = client.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
+                    client.udp.sendto(response, client.remote_addr)
 
-            # Wait for ACK
-            ack = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
-            ack = self.decode_rat_header(ack)
+                    # Wait for ACK
+                    ack = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+                    ack = self.decode_rat_header(ack)
+                except Exception:
+                    retry_times = retry_times - 1
 
-            if (Flag.ACK in self.flag_decode(ack["flags"])):
-                # Connection established successfully
-                if self.debug_mode: print(DEBUG_SERV_RECV_ACK)
-                client.current_state = State.SOCK_ESTABLISHED
-                return client
+            if (retry_times == 0):
+                if self.debug_mode: print(DEBUG_RETRY_FAIL)
+                return False
 
-            # TODO: send again else
-            print("TEST_END_NOT_RECV_ACK")
-            return False
-        else: return False # ACK not in flags
+            # Connection established successfully
+            if self.debug_mode: print(DEBUG_SERV_RECV_ACK)
+            client.current_state = State.SOCK_ESTABLISHED
+            return client
+        else: return False # HLO not in flags
 
     def allow_keepalives(self, value):
         '''Directs the socket to follow or ignore keep-alive messages.'''
@@ -172,16 +180,21 @@ class RatSocket:
         # Send HLO
         if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
 
-        segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
-        self.udp.sendto(segment, self.remote_addr)
-        self.current_state = State.SOCK_HLOSENT
+        segment = {}
+        while (retry_times != 0):
+            try:
+                segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
+                self.udp.sendto(segment, self.remote_addr)
+                self.current_state = State.SOCK_HLOSENT
 
-        # Receive HLO, ACK and set stream_id and seq_num
-        segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
-        segment = self.decode_rat_header(segment)
-        self.stream_id = segment["stream_id"]
-        self.seq_num = segment["seq_num"]
-        if self.debug_mode: print(DEBUG_CLI_RECV_HLOACK)
+                # Receive ACK, HLO and set stream_id and seq_num
+                segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+                segment = self.decode_rat_header(segment)
+                self.stream_id = segment["stream_id"]
+                self.seq_num = segment["seq_num"]
+                if self.debug_mode: print(DEBUG_CLI_RECV_HLOACK)
+            except Exception:
+                retry_times = retry_times - 1
 
         # Send ACK
         if self.debug_mode: print(DEBUG_CLI_SENT_ACK)
@@ -317,6 +330,12 @@ class RatSocket:
                 output = output + "0"
 
         return output
+
+    def is_valid_flagmsg(self, flag_header, flag):
+        '''Checks if the given flagged message contains the given flag.'''
+
+        return "flags" not in flag_header or flag \
+            not in self.flag_decode(flag_header["flags"])
 
     def zero_pad(self, num, length):
         '''Converts an input number into a binary number, and adds 
