@@ -61,7 +61,7 @@ class RatSocket:
 
         # Underlying UDP socket
         self.udp = socket(AF_INET, SOCK_DGRAM)
-        self.udp.settimeout(0)
+        self.udp.settimeout(None)
 
         # State overhead
         self.stream_id = 0
