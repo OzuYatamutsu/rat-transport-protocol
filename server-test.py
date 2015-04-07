@@ -2,7 +2,7 @@ from rat import RatSocket
 from sys import argv
 
 def main():
-    server_sock = RatSocket()
+    server_sock = RatSocket(True)
     print("New RatSocket construction successful!")
 
     server_sock.listen("127.0.0.1", int(argv[1]), 5)

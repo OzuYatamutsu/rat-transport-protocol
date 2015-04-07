@@ -19,11 +19,23 @@ RAT_REPLY_TIMEOUT = 4
 RAT_BYE_TIMEOUT = RAT_REPLY_TIMEOUT / 4
 
 ## RAT messages
-ERR_STATE = "Error: cannot perform operation " + \
+ERR_PREFIX = "<error> "
+DEBUG_PREFIX = "<debug> "
+ERR_STATE = ERR_PREFIX + "Cannot perform operation " + \
 "in current connection state!"
-ERR_HEADER_INVALID = "Error: RAT header size mismatch " + \
+ERR_HEADER_INVALID = ERR_PREFIX + "RAT header size mismatch; " + \
 "header may be malformed!"
-ERR_NUM_OUT_OF_RANGE = "Error: number out of range!"
+ERR_NUM_OUT_OF_RANGE = ERR_PREFIX + "Number out of range!"
+DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
+DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
+DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending HLO (SOCK_HLOSENT)."
+DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Receieved HLO, ACK from server (SOCK_ESTABLISHED)."
+DEBUG_CLI_SENT_ACK = DEBUG_PREFIX + "Sent ACK (SOCK_ESTABLISHED)."
+DEBUG_SERV_RECV_HLO = DEBUG_PREFIX + "Received HLO (SOCK_HLORECV)."
+DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent HLO, ACK to client."
+DEBUG_SERV_RECV_ACK = DEBUG_PREFIX + "Receieved ACK (SOCK_ESTABLISHED)."
+DEBUG_SENT_ACK = DEBUG_PREFIX + "Sent ACK."
+DEBUG_RECV_ACK = DEBUG_PREFIX + "Receieved ACK."
 
 ## RAT connection states
 class State(Enum):
@@ -56,7 +68,7 @@ RAT_FLAG_ORDER = [Flag.ACK, Flag.NACK, Flag.SWIN, Flag.RST,
 class RatSocket:
     '''A connection socket in the RAT protocol.'''
 
-    def __init__(self):
+    def __init__(self, debug_mode=False):
         '''Constructs a new RAT protocol socket.'''
 
         self.current_state = State.SOCK_UNOPENED
@@ -76,6 +88,7 @@ class RatSocket:
         self.sock_queue = []
         self.obey_keepalives = True
         self.num_connections = 0
+        self.debug_mode = debug_mode
 
     def listen(self, address, port, num_connections):
         '''Listens for a given maximum number of 
@@ -86,6 +99,8 @@ class RatSocket:
         self.udp.bind((address, port))
         self.num_connections = num_connections
         self.current_state = State.SOCK_SERVOPEN
+
+        if self.debug_mode: print(DEBUG_LISTEN)
 
     def accept(self):
         '''Accepts a connection from a connection queue and 
@@ -99,14 +114,14 @@ class RatSocket:
         self.state_check(State.SOCK_SERVOPEN)
 
         # Start listening for HLO
+        if self.debug_mode: print(DEBUG_LISTEN_HLO)
         hlo, address = self.udp.recvfrom(RAT_HEADER_SIZE)
         hlo = self.decode_rat_header(hlo)
 
         if (Flag.HLO in self.flag_decode(hlo["flags"])):
             # Timeout begins now!
             self.udp.settimeout(RAT_REPLY_TIMEOUT)
-
-            print("DEBUG: SOCK_HLORECV")
+            if self.debug_mode: print(DEBUG_SERV_RECV_HLO)
 
             # Create new client socket and generate stream_id
             client = RatSocket()
@@ -119,22 +134,17 @@ class RatSocket:
             client.seq_num = client.seq_num + 1
 
             # Send ACK, HLO
-            response = self.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
+            if self.debug_mode: print(DEBUG_SERV_SENT_HLOACK)
+            response = client.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
             client.udp.sendto(response, client.remote_addr)
 
-            print("DEBUG: SENT ACK, HLO")
-
             # Wait for ACK
-            ack, address = client.udp.recvfrom(RAT_HEADER_SIZE)
+            ack = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
             ack = self.decode_rat_header(ack)
 
-            print("DEBUG: RECV ACK")
-
             if (Flag.ACK in self.flag_decode(ack["flags"])):
-
-                print("DEBUG: SOCK_ESTABLISHED")
-
                 # Connection established successfully
+                if self.debug_mode: print(DEBUG_SERV_RECV_ACK)
                 client.current_state = State.SOCK_ESTABLISHED
                 return client
 
@@ -160,24 +170,24 @@ class RatSocket:
         self.remote_addr = (address, port)
 
         # Send HLO
+        if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
+
         segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
         self.udp.sendto(segment, self.remote_addr)
         self.current_state = State.SOCK_HLOSENT
-
-        print("DEBUG: SOCK_HLOSENT")
 
         # Receive HLO, ACK and set stream_id and seq_num
         segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
         segment = self.decode_rat_header(segment)
         self.stream_id = segment["stream_id"]
         self.seq_num = segment["seq_num"]
-
-        print("DEBUG: RECEIVED HLO, ACK")
+        if self.debug_mode: print(DEBUG_CLI_RECV_HLOACK)
 
         # Send ACK
+        if self.debug_mode: print(DEBUG_CLI_SENT_ACK)
+
         segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
         self.udp.sendto(segment, self.remote_addr)
-
         self.current_state = State.SOCK_ESTABLISHED
 
     def send(self, bytes):
