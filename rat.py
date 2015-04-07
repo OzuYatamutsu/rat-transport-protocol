@@ -6,9 +6,9 @@ from random import randrange
 RAT_MAX_SEQ_NUM = 65535
 RAT_MAX_STREAM_ID = 65535
 
-## Header sizes, in bytes
-RAT_HEADER_SIZE = 8
-UDP_HEADER_SIZE = 8
+## Header sizes, in bits
+RAT_HEADER_SIZE = 64
+UDP_HEADER_SIZE = 64
 
 ## RAT default values
 RAT_PAYLOAD_SIZE = 512
@@ -260,11 +260,11 @@ class RatSocket:
         if (len(byte_stream) != RAT_HEADER_SIZE):
             raise IOError(ERR_HEADER_INVALID)
 
-        stream_id = int(byte_stream[0:2])
-        seq_num = int(byte_stream[2:4])
-        length = int(byte_stream[4:6])
-        flags = str(byte_stream[6])
-        offset = int(byte_stream[7])
+        stream_id = int(byte_stream[0:16])
+        seq_num = int(byte_stream[16:32])
+        length = int(byte_stream[32:48])
+        flags = str(byte_stream[48:56], "utf-8")
+        offset = int(byte_stream[56:64])
 
         return {"stream_id": stream_id, "seq_num": seq_num, 
                 "length": length, "flags": flags, "offset": offset}
@@ -284,13 +284,13 @@ class RatSocket:
         if header[0] != self.stream_id:
             raise IOError
 
-    def flag_decode(self, header):
+    def flag_decode(self, flag_field_bits):
         '''Returns the flags set in a RAT header.'''
 
         flag_list = []
 
         for bit in range(0, 8):
-            if bit is "1":
+            if flag_field_bits[bit] is "1":
                 flag_list.append(RAT_FLAG_ORDER[bit])
 
         return flag_list
