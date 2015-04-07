@@ -49,7 +49,9 @@ class Flag(Enum):
     HLO = 5
     BYE = 6
     EXP = 7
-    ORDER = [ACK, NACK, SWIN, RST, ALI, HLO, BYE, EXP]
+
+RAT_FLAG_ORDER = [Flag.ACK, Flag.NACK, Flag.SWIN, Flag.RST, 
+                  Flag.ALI, Flag.HLO, Flag.BYE, Flag.EXP]
 
 class RatSocket:
     '''A connection socket in the RAT protocol.'''
@@ -146,18 +148,18 @@ class RatSocket:
         self.remote_addr = (address, port)
 
         # Send HLO
-        segment = construct_header(0, flag_set([Flag.HLO]), 0)
-        udp.sendto(segment, self.remote_addr)
+        segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
+        self.udp.sendto(segment, self.remote_addr)
         self.current_state = State.SOCK_HLOSENT
 
         # Receive HLO, ACK and set stream_id and seq_num
-        segment = decode_rat_header(udp.recvfrom(RAT_HEADER_SIZE))
-        self.stream_id = hlo_ack["stream_id"]
-        self.seq_num = hlo_ack["seq_num"]
+        segment = self.decode_rat_header(self.udp.recvfrom(RAT_HEADER_SIZE))
+        self.stream_id = segment["stream_id"]
+        self.seq_num = segment["seq_num"]
 
         # Send ACK
-        segment = construct_header(0, flag_set([Flag.ACK]), 0)
-        udp.sendto(segment, self.remote_addr)
+        segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
+        self.udp.sendto(segment, self.remote_addr)
 
         self.current_state = State.SOCK_ESTABLISHED
 
@@ -273,30 +275,32 @@ class RatSocket:
 
         for bit in range(0, 8):
             if bit is "1":
-                flag_list.append(Flag.ORDER[bit])
+                flag_list.append(RAT_FLAG_ORDER[bit])
 
         return flag_list
 
     def flag_set(self, flags):
-        '''Returns a byte-stream corresponding to the given flags provided.'''
+        '''Returns a string corresponding to the given flags provided.'''
 
-        output = b""
-        for flag in Flag.ORDER:
+        output = ""
+        for flag in RAT_FLAG_ORDER:
             if (flag in flags):
-                output = output + b"1"
+                output = output + "1"
             else:
-                output = output + b"0"
+                output = output + "0"
 
         return output
 
     def zero_pad(self, num, length):
         '''Adds leading zeros to num to pad it to given length.'''
-        
-        padding = length - len(str(num))
+
+        num = str(num)
+        padding = length - len(num)
+
         if (padding < 0):
             raise AssertionError(ERR_NUM_OUT_OF_RANGE)
 
-        return (padding * '0') + str(num)
+        return bytes((padding * '0') + num, "utf-8")
         
     def construct_header(self, length, flags, offset):
         '''Constructs an 8-byte long RAT header.'''
@@ -304,18 +308,18 @@ class RatSocket:
         header = b""
 
         # Add stream_id
-        header = header + zero_pad(self.stream_id, 16)
+        header = header + self.zero_pad(self.stream_id, 16)
 
         # Add seq_num
-        header = header + zero_pad(self.seq_num, 16)
+        header = header + self.zero_pad(self.seq_num, 16)
 
         # Add length
-        header = header + zero_pad(length, 16)
+        header = header + self.zero_pad(length, 16)
 
         # Add flags
-        header = header + zero_pad(flags, 8)
+        header = header + self.zero_pad(flags, 8)
 
         # Add offset
-        header = header + zero_pad(offset, 8)
+        header = header + self.zero_pad(offset, 8)
 
         return header
