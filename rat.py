@@ -26,6 +26,7 @@ ERR_STATE = ERR_PREFIX + "Cannot perform operation " + \
 "in current connection state!"
 ERR_HEADER_INVALID = ERR_PREFIX + "RAT header size mismatch; " + \
 "header may be malformed!"
+ERR_MISALIGNED_WORDS = ERR_PREFIX + "Overhead data is not aligned to 16 bits!"
 ERR_NUM_OUT_OF_RANGE = ERR_PREFIX + "Number out of range!"
 DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
 DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
@@ -181,7 +182,7 @@ class RatSocket:
         if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
 
         segment = {}
-        while (retry_times != 0):
+        while (retry_times != 0 and not flag_header(segment, Flag.HLO)):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
                 self.udp.sendto(segment, self.remote_addr)
@@ -272,10 +273,45 @@ class RatSocket:
         pass # TODO: implement
 
     def ack(self):
-        pass
+        '''Sends an acknowledgement that everything 
+        in the current window was received.'''
 
-    def nack(self):
-        pass
+        ack = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
+        retry_times = RAT_RETRY_TIMES
+        sent = False
+
+        while (retry_times != 0 and not sent):
+            try:
+                self.udp.sendto(ack, self.remote_addr)
+                sent = True
+            except Exception:
+                retry_times = retry_times - 1
+        self.seq_num = self.seq_num + 1
+
+    def nack(self, seq_nums):
+        '''Sends a notice that the data associated with 
+        the given sequence numbers was not received.'''
+
+        seq_nums = list(zero_pad(x) for x in seq_nums)
+        length = len(''.join(seq_nums))
+
+        # Sanity check
+        if ((length % 16) != 0):
+            raise IOError(ERR_MISALIGNED_WORDS)
+
+
+        ack = self.construct_header(length, self.flag_set([Flag.NACK]), len(seq_nums))
+        ack = ack + ''.join(seq_nums)
+        retry_times = RAT_RETRY_TIMES
+        sent = False
+
+        while (retry_times != 0 and not sent):
+            try:
+                self.udp.sendto(ack, self.remote_addr)
+                sent = True
+            except Exception:
+                retry_times = retry_times - 1
+        self.seq_num = self.seq_num + 1
 
     def decode_rat_header(self, byte_stream):
         '''Decodes a raw byte-stream as a RAT header and 
