@@ -1,5 +1,5 @@
 from enum import Enum
-from socket import socket
+from socket import socket, AF_INET, SOCK_DGRAM
 from random import randrange
 
 ## Other values
@@ -61,7 +61,7 @@ class RatSocket:
 
         # Underlying UDP socket
         self.udp = socket(AF_INET, SOCK_DGRAM)
-        self.udp.settimeout(RAT_REPLY_TIMEOUT)
+        self.udp.settimeout(0)
 
         # State overhead
         self.stream_id = 0
@@ -75,7 +75,7 @@ class RatSocket:
         self.obey_keepalives = True
         self.num_connections = 0
 
-    def listen(address, port, num_connections):
+    def listen(self, address, port, num_connections):
         '''Listens for a given maximum number of 
        connections on a given address and port.'''
 
@@ -85,7 +85,7 @@ class RatSocket:
         self.num_connections = num_connections
         self.current_state = State.SOCK_SERVOPEN
 
-    def accept():
+    def accept(self):
         '''Accepts a connection from a connection queue and 
         returns a new client socket to use. This removes the 
         connection from the connection queue. If there are no 
@@ -94,13 +94,16 @@ class RatSocket:
         to accept. The client socket will have an established 
         connection to the client.'''
 
-        state_check(State.SOCK_SERVOPEN)
+        self.state_check(State.SOCK_SERVOPEN)
 
         # Start listening for HLO
         hlo, address = self.udp.recvfrom(RAT_HEADER_SIZE)
-        hlo = decode_rat_header(hlo)
+        hlo = self.decode_rat_header(hlo)
 
         if (Flag.HLO in flag_decode(hlo["flags"])):
+            # Timeout begins now!
+            self.udp.settimeout(RAT_REPLY_TIMEOUT)
+
             # Create new client socket and generate stream_id
             client = RatSocket()
             client.remote_addr = address
@@ -112,14 +115,14 @@ class RatSocket:
             client.seq_num = client.seq_num + 1
 
             # Send ACK, HLO
-            response = construct_header(0, flag_set([Flag.ACK, Flag.HLO]), 0)
+            response = self.construct_header(0, flag_set([Flag.ACK, Flag.HLO]), 0)
             client.udp.sendto(response, client.remote_addr)
 
             # Wait for ACK
             ack, address = client.udp.recvfrom(RAT_HEADER_SIZE)
             ack = decode_rat_header(ack)
 
-            if (Flag.ACK in flag_decode(ack["flags"])):
+            if (Flag.ACK in self.flag_decode(ack["flags"])):
                 # Connection established successfully
                 client.current_state = State.SOCK_ESTABLISHED
                 return client
@@ -128,12 +131,12 @@ class RatSocket:
             print("TEST_END_NOT_RECV_ACK")
             exit(0)
 
-    def allow_keepalives(value):
+    def allow_keepalives(self, value):
         '''Directs the socket to follow or ignore keep-alive messages.'''
 
         self.obey_keepalives = value
 
-    def connect(address, port, send_keepalives=False):
+    def connect(self, address, port, send_keepalives=False):
         '''Attempts to connect to a server socket at a given port 
         and address. If successful, the current socket will have an 
         established connection to the server. An optional keep-alive 
@@ -158,7 +161,7 @@ class RatSocket:
 
         self.current_state = State.SOCK_ESTABLISHED
 
-    def send(bytes):
+    def send(self, bytes):
         '''Sends a byte-stream.'''
 
         send_queue = []
@@ -179,7 +182,7 @@ class RatSocket:
 
             # TODO: ACKs at end of window
 
-    def recv(buffer_size):
+    def recv(self, buffer_size):
         '''Reads a given amount of data from an established socket.'''
 
         state_check([SOCK_ESTABLISHED, SOCK_BYESENT, SOCK_BYERECV])
@@ -218,7 +221,7 @@ class RatSocket:
             nack_queue.append(seq_num)
             nack(seq_num)
 
-    def close():
+    def close(self):
         '''Attempts to cleanly close a socket and shut down the connection 
         stream. Sockets which are closed cannot be reopened or reused.'''
 
@@ -226,13 +229,13 @@ class RatSocket:
 
         pass # TODO: implement
 
-    def ack():
+    def ack(self):
         pass
 
-    def nack():
+    def nack(self):
         pass
 
-    def decode_rat_header(byte_stream):
+    def decode_rat_header(self, byte_stream):
         '''Decodes a raw byte-stream as a RAT header and 
         returns the header data.'''
 
@@ -248,21 +251,22 @@ class RatSocket:
         return {"stream_id": stream_id, "seq_num": seq_num, 
                 "length": length, "flags": flags, "offset": offset}
 
-    def state_check(state):
+    def state_check(self, state):
         '''Raises an error if this socket is attempting 
         to perform an operation in an inappropriate state.'''
 
-        if (self.current_state not in state):
-            raise IOError(ERR_STATE)
+        if (self.current_state != state):
+            if (self.current_state not in state):
+                raise IOError(ERR_STATE)
 
-    def integrity_check(header):
+    def integrity_check(self, header):
         '''Raises an error if this header is not destined 
         for the current stream.'''
 
         if header[0] != self.stream_id:
             raise IOError
 
-    def flag_decode(header):
+    def flag_decode(self, header):
         '''Returns the flags set in a RAT header.'''
 
         flag_list = []
@@ -273,7 +277,7 @@ class RatSocket:
 
         return flag_list
 
-    def flag_set(flags):
+    def flag_set(self, flags):
         '''Returns a byte-stream corresponding to the given flags provided.'''
 
         output = b""
@@ -285,7 +289,7 @@ class RatSocket:
 
         return output
 
-    def zero_pad(num, length):
+    def zero_pad(self, num, length):
         '''Adds leading zeros to num to pad it to given length.'''
         
         padding = length - len(str(num))
@@ -294,7 +298,7 @@ class RatSocket:
 
         return (padding * '0') + str(num)
         
-    def construct_header(length, flags, offset):
+    def construct_header(self, length, flags, offset):
         '''Constructs an 8-byte long RAT header.'''
 
         header = b""
