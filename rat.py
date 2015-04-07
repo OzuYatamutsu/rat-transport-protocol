@@ -106,6 +106,8 @@ class RatSocket:
             # Timeout begins now!
             self.udp.settimeout(RAT_REPLY_TIMEOUT)
 
+            print("DEBUG: SOCK_HLORECV")
+
             # Create new client socket and generate stream_id
             client = RatSocket()
             client.remote_addr = address
@@ -120,11 +122,18 @@ class RatSocket:
             response = self.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
             client.udp.sendto(response, client.remote_addr)
 
+            print("DEBUG: SENT ACK, HLO")
+
             # Wait for ACK
             ack, address = client.udp.recvfrom(RAT_HEADER_SIZE)
             ack = self.decode_rat_header(ack)
 
+            print("DEBUG: RECV ACK")
+
             if (Flag.ACK in self.flag_decode(ack["flags"])):
+
+                print("DEBUG: SOCK_ESTABLISHED")
+
                 # Connection established successfully
                 client.current_state = State.SOCK_ESTABLISHED
                 return client
@@ -154,10 +163,14 @@ class RatSocket:
         self.udp.sendto(segment, self.remote_addr)
         self.current_state = State.SOCK_HLOSENT
 
+        print("DEBUG: SOCK_HLOSENT")
+
         # Receive HLO, ACK and set stream_id and seq_num
         segment = self.decode_rat_header(self.udp.recvfrom(RAT_HEADER_SIZE))
         self.stream_id = segment["stream_id"]
         self.seq_num = segment["seq_num"]
+
+        print("DEBUG: RECEIVED HLO, ACK")
 
         # Send ACK
         segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
