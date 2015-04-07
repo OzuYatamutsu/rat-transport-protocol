@@ -9,6 +9,7 @@ def main():
     print("RatSocket now listening for connections on 127.0.0.1:" + argv[1] + "!")
 
     client = server_sock.accept()
-    print("RatSocket accepted connection from client!")
+    if client is not False: print("RatSocket accepted connection from client!")
+    else: print("Error: RatSocket didn't receive ACK response!")
 
 main()
