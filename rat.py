@@ -60,7 +60,6 @@ class RatSocket:
         self.stream_id = 0
         self.seq_num = 0
         self.window_size = 0
-        self.nack_queue = []
 
     def listen(address, port, num_connections):
         '''Listens for a given maximum number of 
@@ -146,6 +145,7 @@ class RatSocket:
         state_check([SOCK_ESTABLISHED, SOCK_BYESENT, SOCK_BYERECV])
         bytes_read = 0
         recv_queue = {}
+        nack_queue = []
         segment = b""
         segments_recv = 0
         buffer_ok = True
