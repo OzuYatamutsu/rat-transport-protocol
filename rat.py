@@ -145,6 +145,8 @@ class RatSocket:
         directive can be set (default False) that directs this client 
         to send keep-alive messages.'''
 
+        # Timeout begins now!
+        self.udp.settimeout(RAT_REPLY_TIMEOUT)
         self.remote_addr = (address, port)
 
         # Send HLO
