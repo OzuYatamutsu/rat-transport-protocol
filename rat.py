@@ -102,7 +102,7 @@ class RatSocket:
         hlo, address = self.udp.recvfrom(RAT_HEADER_SIZE)
         hlo = self.decode_rat_header(hlo)
 
-        if (Flag.HLO in flag_decode(hlo["flags"])):
+        if (Flag.HLO in self.flag_decode(hlo["flags"])):
             # Timeout begins now!
             self.udp.settimeout(RAT_REPLY_TIMEOUT)
 
@@ -117,12 +117,12 @@ class RatSocket:
             client.seq_num = client.seq_num + 1
 
             # Send ACK, HLO
-            response = self.construct_header(0, flag_set([Flag.ACK, Flag.HLO]), 0)
+            response = self.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
             client.udp.sendto(response, client.remote_addr)
 
             # Wait for ACK
             ack, address = client.udp.recvfrom(RAT_HEADER_SIZE)
-            ack = decode_rat_header(ack)
+            ack = self.decode_rat_header(ack)
 
             if (Flag.ACK in self.flag_decode(ack["flags"])):
                 # Connection established successfully
