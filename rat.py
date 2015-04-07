@@ -131,7 +131,7 @@ class RatSocket:
 
             # TODO: send again else
             print("TEST_END_NOT_RECV_ACK")
-            exit(0)
+            return False
 
     def allow_keepalives(self, value):
         '''Directs the socket to follow or ignore keep-alive messages.'''
