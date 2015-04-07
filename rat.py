@@ -1,12 +1,12 @@
 from enum import Enum
 from socket import socket
-import threading
 
 # Header sizes, in bytes
 RAT_HEADER_SIZE = 8
 UDP_HEADER_SIZE = 8
 
 ## RAT default values
+RAT_PAYLOAD_SIZE = 512
 
 ## RAT timers (in seconds)
 RAT_REPLY_TIMEOUT = 4
@@ -17,6 +17,7 @@ ERR_STATE = "Error: cannot perform operation " + \
 "in current connection state!"
 ERR_HEADER_INVALID = "Error: RAT header size mismatch " + \
 "header may be malformed!"
+ERR_NUM_OUT_OF_RANGE = "Error: number out of range!"
 
 ## RAT connection states
 class State(Enum):
@@ -31,11 +32,21 @@ class State(Enum):
     SOCK_BYERECV = 6
     SOCK_CLOSED = 7
 
+## RAT header flags
+class Flag(Enum):
+    '''The collection of header flags in the RAT protocol.'''
+    ACK = 0
+    NACK = 1
+    SWIN = 2
+    RST = 3
+    ALI = 4
+    HLO = 5
+    BYE = 6
+    EXP = 7
+    ORDER = [ACK, NACK, SWIN, RST, ALI, HLO, BYE, EXP]
+
 class RatSocket:
     '''A connection socket in the RAT protocol.'''
-
-    # Threading lock
-    queue_lock = threading.Lock()
 
     def __init__(self):
         '''Constructs a new RAT protocol socket.'''
@@ -44,15 +55,12 @@ class RatSocket:
 
         # Underlying UDP socket
         self.udp = socket(AF_INET, SOCK_DGRAM)
-
-        # Threading lock
-        ## INSERT HERE
+        self.udp.settimeout(RAT_REPLY_TIMEOUT)
 
         self.stream_id = 0
         self.seq_num = 0
         self.window_size = 0
         self.nack_queue = []
-        
 
     def listen(address, port, num_connections):
         '''Listens for a given maximum number of 
@@ -93,7 +101,23 @@ class RatSocket:
         directive can be set (default False) that directs this client 
         to send keep-alive messages.'''
 
-        pass # TODO: implement
+        self.remote_addr = (address, port)
+
+        # Send HLO
+        segment = construct_header(0, flag_set([Flag.HLO]), 0)
+        udp.sendto(segment, self.remote_addr)
+        self.current_state = State.SOCK_HLOSENT
+
+        # Receive HLO, ACK and set stream_id and seq_num
+        segment = decode_rat_header(udp.recvfrom(RAT_HEADER_SIZE))
+        self.stream_id = hlo_ack["stream_id"]
+        self.seq_num = hlo_ack["seq_num"]
+
+        # Send ACK
+        segment = construct_header(0, flag_set([Flag.ACK]), 0)
+        udp.sendto(segment, self.remote_addr)
+
+        self.current_state = State.SOCK_ESTABLISHED
 
     def send(bytes):
         '''Sends a byte-stream.'''
@@ -105,20 +129,38 @@ class RatSocket:
 
         state_check([SOCK_ESTABLISHED, SOCK_BYESENT, SOCK_BYERECV])
         bytes_read = 0
+        recv_queue = {}
+        segment = b""
+        segments_recv = 0
+        buffer_ok = True
 
-        while (bytes_read < buffer_size):
-            try:
-                header = decode_rat_header(
-                    udp.recvfrom(RAT_HEADER_SIZE))
-                integrity_check(header)
+        try:
+            while (bytes_read < buffer_size):
+                while (segments_recv < self.window_size):
+                    header = decode_rat_header(
+                        udp.recvfrom(RAT_HEADER_SIZE))
+                    integrity_check(header)
+                    flags = flag_decode(header)
+                    udp_length = 0
                 
-            except IOError:
-                nack_queue.append(seq_num)
-                nack(seq_num)
+                    while (udp_length < header["length"]):
+                        segment = segment + udp.recvfrom(header["length"])
+                        bytes_read = bytes_read + header["length"]
+            
+                    if (bytes_read > buffer_size):
+                        # If there's no room in the buffer, discard and NACK
+                        bytes_read = buffer_size
+                        raise IOError
 
+                    recv_queue[header["seq_num"]] = segment
+                    seq_num = seq_num + 1
+                    # TODO: Handle flags
 
+                # TODO: ACK/NACK
 
-        pass # TODO: implement
+        except IOError:
+            nack_queue.append(seq_num)
+            nack(seq_num)
 
     def close():
         '''Attempts to cleanly close a socket and shut down the connection 
@@ -139,21 +181,14 @@ class RatSocket:
         if (len(byte_stream) != RAT_HEADER_SIZE):
             raise IOError(ERR_HEADER_INVALID)
 
-        stream_id = int(byte_stream[0:4])
-        seq_num = int(byte_stream[4:6])
-        flags = ''.join(str(x) for x in byte_stream[6:])[0:7]
-        offset = int(''.join(str(x) for x in byte_stream[6:])[7:13])
-        checksum = int(''.join(str(x) for x in byte_stream[6:])[13:])
+        stream_id = int(byte_stream[0:2])
+        seq_num = int(byte_stream[2:4])
+        length = int(byte_stream[4:6])
+        flags = str(byte_stream[6])
+        offset = int(byte_stream[7])
 
-        return (stream_id, seq_num, flags, offset, checksum)
-
-    def checksum_check(flags, offset, given_checksum):
-        '''Computes a checksum based on the flags and offset 
-        header values provided, and checks it against another 
-        provided checksum.'''
-
-        return given_checksum is str(int(flags, 2) + 
-                                     int(offset, 2))[0:3]
+        return {"stream_id": stream_id, "seq_num": seq_num, 
+                "length": length, "flags": flags, "offset": offset}
 
     def state_check(state):
         '''Raises an error if this socket is attempting 
@@ -163,10 +198,62 @@ class RatSocket:
             raise IOError(ERR_STATE)
 
     def integrity_check(header):
-        '''Raises an error if this header is malformed or 
-        not destined for the current socket.'''
+        '''Raises an error if this header is not destined 
+        for the current stream.'''
 
         if header[0] != self.stream_id:
             raise IOError
-        if not checksum_check(header[2], header[3], header[4]):
-            raise IOError
+
+    def flag_decode(header):
+        '''Returns the flags set in a RAT header.'''
+
+        flag_list = []
+
+        for bit in range(0, 8):
+            if bit is "1":
+                flag_list.append(Flag.ORDER[bit])
+
+        return flag_list
+
+    def flag_set(flags):
+        '''Returns a byte-stream corresponding to the given flags provided.'''
+
+        output = b""
+        for flag in Flag.ORDER:
+            if (flag in flags):
+                output = output + b"1"
+            else:
+                output = output + b"0"
+
+        return output
+
+    def zero_pad(num, length):
+        '''Adds leading zeros to num to pad it to given length.'''
+        
+        padding = length - len(str(num))
+        if (padding < 0):
+            raise AssertionError(ERR_NUM_OUT_OF_RANGE)
+
+        return (padding * '0') + str(num)
+        
+    def construct_header(length, flags, offset):
+        '''Constructs an 8-byte long RAT header.'''
+
+        header = b""
+
+        # Add stream_id
+        header = header + zero_pad(self.stream_id, 16)
+
+        # Add seq_num
+        header = header + zero_pad(self.seq_num, 16)
+
+        # Add length
+        header = header + zero_pad(length, 16)
+
+        # Add flags
+        header = header + zero_pad(flags, 8)
+
+        # Add offset
+        header = header + zero_pad(offset, 8)
+
+        return header
