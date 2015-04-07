@@ -122,7 +122,23 @@ class RatSocket:
     def send(bytes):
         '''Sends a byte-stream.'''
 
-        pass # TODO: implement
+        send_queue = []
+
+        while (len(bytes) != 0):
+            data = bytes[0:RAT_PAYLOAD_SIZE]
+            bytes = bytes[RAT_PAYLOAD_SIZE:]
+            send_queue.append(construct_header(len(data), 0, 0) + data)
+            self.seq_num = self.seq_num + 1
+
+        while (len(send_queue) > 0):
+            window_remain = window_size
+
+            while (len(send_queue) > 0 and window_remain > 0):
+                window_remain = window_remain - 1
+                udp.sendto(send_queue[0], self.remote_addr)
+                del send_queue[0]
+
+            # TODO: ACKs at end of window
 
     def recv(buffer_size):
         '''Reads a given amount of data from an established socket.'''
@@ -165,6 +181,8 @@ class RatSocket:
     def close():
         '''Attempts to cleanly close a socket and shut down the connection 
         stream. Sockets which are closed cannot be reopened or reused.'''
+
+
 
         pass # TODO: implement
 
