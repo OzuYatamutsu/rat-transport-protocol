@@ -1,12 +1,18 @@
 from enum import Enum
 from socket import socket
+from random import randrange
 
-# Header sizes, in bytes
+## Other values
+RAT_MAX_SEQ_NUM = 65535
+RAT_MAX_STREAM_ID = 65535
+
+## Header sizes, in bytes
 RAT_HEADER_SIZE = 8
 UDP_HEADER_SIZE = 8
 
 ## RAT default values
 RAT_PAYLOAD_SIZE = 512
+RAT_DEFAULT_WINDOW = 5
 
 ## RAT timers (in seconds)
 RAT_REPLY_TIMEOUT = 4
@@ -51,27 +57,33 @@ class RatSocket:
     def __init__(self):
         '''Constructs a new RAT protocol socket.'''
 
-        self.current_state = SOCK_UNOPENED
+        self.current_state = State.SOCK_UNOPENED
 
         # Underlying UDP socket
         self.udp = socket(AF_INET, SOCK_DGRAM)
         self.udp.settimeout(RAT_REPLY_TIMEOUT)
 
+        # State overhead
         self.stream_id = 0
         self.seq_num = 0
         self.window_size = 0
+
+        # Other values
+        self.remote_addr = ("localhost", 0)
+        self.active_streams = []
+        self.sock_queue = []
+        self.obey_keepalives = True
+        self.num_connections = 0
 
     def listen(address, port, num_connections):
         '''Listens for a given maximum number of 
        connections on a given address and port.'''
 
-        state_check(SOCK_UNOPENED)
-        udp.bind((address, port))
+        self.state_check(State.SOCK_UNOPENED)
 
+        self.udp.bind((address, port))
         self.num_connections = num_connections
-        self.sock_queue = []
-        self.current_state = SOCK_SERVOPEN
-        self.obey_keepalives = True
+        self.current_state = State.SOCK_SERVOPEN
 
     def accept():
         '''Accepts a connection from a connection queue and 
@@ -82,11 +94,39 @@ class RatSocket:
         to accept. The client socket will have an established 
         connection to the client.'''
 
-        state_check(SOCK_SERVOPEN)
-        while (len(sock_queue) == 0):
-            pass
-            # Release the lock
-        pass # TODO: implement
+        state_check(State.SOCK_SERVOPEN)
+
+        # Start listening for HLO
+        hlo, address = self.udp.recvfrom(RAT_HEADER_SIZE)
+        hlo = decode_rat_header(hlo)
+
+        if (Flag.HLO in flag_decode(hlo["flags"])):
+            # Create new client socket and generate stream_id
+            client = RatSocket()
+            client.remote_addr = address
+            client.current_state = State.SOCK_HLORECV
+            client.stream_id = randrange(1, RAT_MAX_STREAM_ID)
+            client.window_size = RAT_DEFAULT_WINDOW
+
+            self.active_streams.append(client)
+            client.seq_num = client.seq_num + 1
+
+            # Send ACK, HLO
+            response = construct_header(0, flag_set([Flag.ACK, Flag.HLO]), 0)
+            client.udp.sendto(response, client.remote_addr)
+
+            # Wait for ACK
+            ack, address = client.udp.recvfrom(RAT_HEADER_SIZE)
+            ack = decode_rat_header(ack)
+
+            if (Flag.ACK in flag_decode(ack["flags"])):
+                # Connection established successfully
+                client.current_state = State.SOCK_ESTABLISHED
+                return client
+
+            # TODO: send again else
+            print("TEST_END_NOT_RECV_ACK")
+            exit(0)
 
     def allow_keepalives(value):
         '''Directs the socket to follow or ignore keep-alive messages.'''
