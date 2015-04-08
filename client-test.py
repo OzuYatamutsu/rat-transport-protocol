@@ -10,8 +10,9 @@ This is line two of a long bytestream that must be split into multiple segments.
 This is line three of a long bytestream that must be split into multiple segments.
 This is line four of a long bytestream that must be split into multiple segments."""
 
-send_queue = [TEST_BYTESTREAM, TEST_BYTESTREAM2, TEST_BYTESTREAM3, 
+recv_queue = [TEST_BYTESTREAM, TEST_BYTESTREAM2, TEST_BYTESTREAM3, 
               TEST_BYTESTREAM4, TEST_LONGSTREAM]
+
 def main():
     client_sock = RatSocket(True)
     print("New RatSocket construction successful!")
@@ -19,8 +20,8 @@ def main():
     client_sock.connect("127.0.0.1", int(argv[1]))
     print("RatSocket connected to 127.0.0.1:" + argv[1] + "!")
 
-    for item in send_queue:
-        client_sock.send(TEST_BYTESTREAM)
-        print("RatSocket sent stream " + str(send_queue.index(item) + 1) + "to server!")
-
+    for item in recv_queue:
+        test_data = server_sock.recv(len(item) + RAT_HEADER_SIZE)
+        if test_data == item: print("RatSocket successfully receieved datagram " + 
+                                    str(recv_queue.index(item) + 1) + "from client!")
 main()
