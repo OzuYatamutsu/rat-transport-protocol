@@ -6,6 +6,8 @@ from random import randrange
 RAT_MAX_SEQ_NUM = 65535
 RAT_MAX_STREAM_ID = 65535
 RAT_RETRY_TIMES = 5
+# Max number of 16 bit overhead words in payload (16 * 255)
+RAT_MAX_OVERHEAD_BUFFER = 4080
 
 ## Header sizes, in bits
 RAT_HEADER_SIZE = 64
@@ -204,26 +206,54 @@ class RatSocket:
         self.udp.sendto(segment, self.remote_addr)
         self.current_state = State.SOCK_ESTABLISHED
 
-    def send(self, bytes):
+    def send(self, byte_stream):
         '''Sends a byte-stream.'''
 
-        send_queue = []
+        send_queue = {}
 
-        while (len(bytes) != 0):
-            data = bytes[0:RAT_PAYLOAD_SIZE]
-            bytes = bytes[RAT_PAYLOAD_SIZE:]
-            send_queue.append(construct_header(len(data), 0, 0) + data)
+        while (len(byte_stream) != 0):
+            data = byte_stream[0:RAT_PAYLOAD_SIZE]
+            byte_stream = byte_stream[RAT_PAYLOAD_SIZE:]
+
+            if (len(byte_stream) == 0):
+                send_queue[self.seq_num] = construct_header(len(data), self.flag_set([Flag.ACK]), 0)
+            else:
+                send_queue[self.seq_num] = construct_header(len(data), 0, 0) + data
             self.seq_num = self.seq_num + 1
 
-        while (len(send_queue) > 0):
-            window_remain = window_size
+        list_queue = list(send_queue)
+        list_queue.sort()
+        while (len(list_queue) > 0):
+            window_queue = list_queue[0:self.window_size]
 
-            while (len(send_queue) > 0 and window_remain > 0):
-                window_remain = window_remain - 1
-                udp.sendto(send_queue[0], self.remote_addr)
-                del send_queue[0]
+            for segment in window_queue:
+                udp.sendto(send_queue[segment], self.remote_addr)
 
-            # TODO: ACKs at end of window
+            # Wait for ACK or NACK
+            segment_full = self.udp.recvfrom(RAT_MAX_OVERHEAD_BUFFER)[0]
+            segment = self.decode_rat_header(segment)[0:64]
+
+            # TODO: Other flags
+            if (Flag.ACK in flag_decode(segment["flags"])):
+                if (segment["seq_num"] == self.seq_num):
+                    self.seq_num = self.seq_num + 1
+
+                else:
+                    # PROBLEM HERE - SEQ_NUM MISMATCH
+                    pass
+            elif (Flag.NACK in flag_decode(segment["flags"])):
+                nack_queue = data_decode(segment_full[64 : (16 * segment["offset"])])
+
+                # Retransmit NACKed sequence numbers
+                window_queue = [nacked for nacked in window_queue if nacked not in nack_queue]
+                self.seq_num = self.seq_num + 1
+
+            else:
+                # PROBLEM HERE - SEGMENT NOT ACK OR NACK
+                pass
+
+            # Remove from buffer
+            list_queue = [unsent for unsent in list_queue if unsent not in window_queue]
 
     def recv(self, buffer_size):
         '''Reads a given amount of data from an established socket.'''
@@ -239,15 +269,15 @@ class RatSocket:
         try:
             while (bytes_read < buffer_size):
                 while (segments_recv < self.window_size):
-                    header = decode_rat_header(
-                        udp.recvfrom(RAT_HEADER_SIZE))
+                    header = self.udp.recvfrom(RAT_HEADER_SIZE)
+                    header = decode_rat_header(header)
                     integrity_check(header)
                     flags = flag_decode(header)
                     udp_length = 0
                 
-                    while (udp_length < header["length"]):
+                    while (len(segment) < header["length"]):
                         segment = segment + udp.recvfrom(header["length"])
-                        bytes_read = bytes_read + header["length"]
+                        udp_length = udp_length + len(segment)
             
                     if (bytes_read > buffer_size):
                         # If there's no room in the buffer, discard and NACK
@@ -256,7 +286,8 @@ class RatSocket:
 
                     recv_queue[header["seq_num"]] = segment
                     seq_num = seq_num + 1
-                    # TODO: Handle flags
+                    
+
 
                 # TODO: ACK/NACK
 
@@ -268,9 +299,21 @@ class RatSocket:
         '''Attempts to cleanly close a socket and shut down the connection 
         stream. Sockets which are closed cannot be reopened or reused.'''
 
+        # Timeout begins now!
+        self.udp.settimeout(RAT_BYE_TIMEOUT)
 
+        # Send BYE
+        if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
 
-        pass # TODO: implement
+        while (retry_times != 0):
+            try:
+                segment = self.construct_header(0, self.flag_set([Flag.BYE]), 0)
+                self.udp.sendto(segment, self.remote_addr)
+                self.current_state = State.SOCK_BYESENT
+            except Exception:
+                retry_times = retry_times - 1
+
+        # Remaining is handled by recv() and close_halfopen()
 
     def ack(self):
         '''Sends an acknowledgement that everything 
@@ -406,3 +449,8 @@ class RatSocket:
         header = header + self.zero_pad(offset, 8)
 
         return header
+
+    def data_decode(self, data, num_words):
+        '''Returns a list of 16-bit numbers from a RAT payload.'''
+
+        pass
