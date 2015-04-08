@@ -21,7 +21,11 @@ def main():
     print("RatSocket now listening for connections on 127.0.0.1:" + argv[1] + "!")
 
     client = server_sock.accept()
-    if client is not False: print("RatSocket accepted connection from client!")
+    if client is not False: 
+        print("RatSocket accepted connection from client!")
+        print("Local bind: " + str(server_sock.local_addr))
+        print("Remote bind: " + str(server_sock.remote_addr))
+
     else: print("Error: RatSocket didn't receive ACK response!")
 
     for item in send_queue:

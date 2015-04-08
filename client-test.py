@@ -19,6 +19,8 @@ def main():
 
     client_sock.connect("127.0.0.1", int(argv[1]))
     print("RatSocket connected to 127.0.0.1:" + argv[1] + "!")
+    print("Local bind: " + str(client_sock.local_addr))
+    print("Remote bind: " + str(client_sock.remote_addr))
 
     for item in recv_queue:
         test_data = client_sock.recv(len(item) + RAT_HEADER_SIZE)
