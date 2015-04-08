@@ -92,6 +92,7 @@ class RatSocket:
         self.window_size = 0
 
         # Other values
+        self.local_addr = ("localhost", 0)
         self.remote_addr = ("localhost", 0)
         self.active_streams = []
         self.sock_queue = []
@@ -105,7 +106,8 @@ class RatSocket:
 
         self.state_check(State.SOCK_UNOPENED)
 
-        self.udp.bind((address, port))
+        self.local_addr = (address, port)
+        self.udp.bind(self.local_addr)
         self.num_connections = num_connections
         self.current_state = State.SOCK_SERVOPEN
 
@@ -146,7 +148,7 @@ class RatSocket:
             self.active_streams.append(client)
             client.seq_num = client.seq_num + 1
 
-            # Send ACK, HLO
+            # Send ACK, HLO + address seen
             ack = {}
             while (retry_times != 0 and not self.is_valid_flagmsg(ack, Flag.ACK)):
                 try:
@@ -168,6 +170,7 @@ class RatSocket:
             if self.debug_mode: print(DEBUG_SERV_RECV_ACK)
             client.current_state = State.SOCK_ESTABLISHED
             self.current_state = State.SOCK_ESTABLISHED
+            self.remote_addr = client.remote_addr
             self.seq_num = 1
 
             return client
@@ -199,6 +202,8 @@ class RatSocket:
                self.is_valid_flagmsg(segment, Flag.ACK)):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
+                self.local_addr = ("127.0.0.1", self.get_unused_port())
+                self.udp.bind(self.local_addr)
                 self.udp.sendto(segment, self.remote_addr)
                 self.current_state = State.SOCK_HLOSENT
 
@@ -208,6 +213,7 @@ class RatSocket:
                 self.stream_id = segment["stream_id"]
                 self.seq_num = segment["seq_num"]
                 self.window_size = RAT_DEFAULT_WINDOW
+                
                 if self.debug_mode: print(DEBUG_CLI_RECV_HLOACK)
             except Exception:
                 retry_times = retry_times - 1
@@ -480,6 +486,16 @@ class RatSocket:
         header = header + self.zero_pad(offset, 8)
 
         return header
+
+    def get_unused_port(self):
+        '''Returns an unbound port number.'''
+
+        temp_sock = socket(AF_INET, SOCK_DGRAM)
+        temp_sock.bind(("localhost", 0))
+        port = temp_sock.getsockname()[1]
+        temp_sock.close()
+
+        return port
 
     def data_decode(self, data, num_words):
         '''Returns a list of 16-bit numbers from a RAT payload.'''
