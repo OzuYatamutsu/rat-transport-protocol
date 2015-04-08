@@ -181,7 +181,7 @@ class RatSocket:
 
         self.obey_keepalives = value
 
-    def connect(self, address, port, send_keepalives=False):
+    def connect(self, address, port, send_keepalives=False, local_port=0):
         '''Attempts to connect to a server socket at a given port 
         and address. If successful, the current socket will have an 
         established connection to the server. An optional keep-alive 
@@ -202,8 +202,10 @@ class RatSocket:
                self.is_valid_flagmsg(segment, Flag.ACK)):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
-                self.local_addr = ("127.0.0.1", self.get_unused_port())
+                self.local_addr = ("127.0.0.1", local_port)
                 self.udp.bind(self.local_addr)
+                # Update port number
+                self.local_addr = ("127.0.0.1", self.udp.getsockname[1])
                 self.udp.sendto(segment, self.remote_addr)
                 self.current_state = State.SOCK_HLOSENT
 
@@ -493,16 +495,6 @@ class RatSocket:
         header = header + self.zero_pad(offset, 8)
 
         return header
-
-    def get_unused_port(self):
-        '''Returns an unbound port number.'''
-
-        temp_sock = socket(AF_INET, SOCK_DGRAM)
-        temp_sock.bind(("localhost", 0))
-        port = temp_sock.getsockname()[1]
-        temp_sock.close()
-
-        return port
 
     def data_decode(self, data, num_words):
         '''Returns a list of 16-bit numbers from a RAT payload.'''

@@ -2,6 +2,7 @@ from rat import *
 from sys import argv
 from os import _exit
 
+MSG_CONNECT = "Ready for commands!"
 ERR_PORT_ODD = "Error: Sorry! This assignment specifies an " + \
     "input port must be an even number!"
 ERR_INPUT_ARGS = "Error: Address or port numbers invalid!"
@@ -30,6 +31,19 @@ def main():
     if (int(local_port) % 2 != 1):
         print(ERR_PORT_EVEN)
         _exit(0)
+
+    local_port = int(local_port)
+    netemu_port = int(netemu_port)
+
+def client_loop(local_port, netemu_ip, netemu_port):
+    '''The main loop of the server.'''
+
+    client_sock = RatSocket(debug_mode=True)
+    client_sock.connect(netemu_ip, netemu_port, local_port=local_port)
+    print(MSG_LISTENING)
+    while True:
+        # Loop here
+        pass
 
 def address_check(ip_addr):
     '''Checks if a given IP address is valid.'''
