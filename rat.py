@@ -142,11 +142,11 @@ class RatSocket:
 
             # Send ACK, HLO
             ack = {}
-            while (retry_times != 0 and not flag_header(ack, Flag.ACK)):
+            while (retry_times != 0 and not self.is_valid_flagmsg(ack, Flag.ACK)):
                 try:
                     if self.debug_mode: print(DEBUG_SERV_SENT_HLOACK)
                     response = client.construct_header(0, self.flag_set([Flag.ACK, Flag.HLO]), 0)
-                    client.udp.sendto(response, client.remote_addr)
+                    self.udp.sendto(response, client.remote_addr)
 
                     # Wait for ACK
                     ack = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
@@ -161,6 +161,8 @@ class RatSocket:
             # Connection established successfully
             if self.debug_mode: print(DEBUG_SERV_RECV_ACK)
             client.current_state = State.SOCK_ESTABLISHED
+            self.current_state = State.SOCK_ESTABLISHED
+
             return client
         else: return False # HLO not in flags
 
@@ -184,7 +186,10 @@ class RatSocket:
         if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
 
         segment = {}
-        while (retry_times != 0 and not flag_header(segment, Flag.HLO)):
+        retry_times = RAT_RETRY_TIMES
+
+        while (retry_times != 0 and not self.is_valid_flagmsg(segment, Flag.HLO) and not 
+               self.is_valid_flagmsg(segment, Flag.ACK)):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
                 self.udp.sendto(segment, self.remote_addr)
@@ -216,9 +221,9 @@ class RatSocket:
             byte_stream = byte_stream[RAT_PAYLOAD_SIZE:]
 
             if (len(byte_stream) == 0):
-                send_queue[self.seq_num] = construct_header(len(data), self.flag_set([Flag.ACK]), 0)
+                send_queue[self.seq_num] = self.construct_header(len(data), self.flag_set([Flag.ACK]), 0)
             else:
-                send_queue[self.seq_num] = construct_header(len(data), 0, 0) + data
+                send_queue[self.seq_num] = self.construct_header(len(data), 0, 0) + data
             self.seq_num = self.seq_num + 1
 
         list_queue = list(send_queue)
@@ -258,42 +263,39 @@ class RatSocket:
     def recv(self, buffer_size):
         '''Reads a given amount of data from an established socket.'''
 
-        state_check([SOCK_ESTABLISHED, SOCK_BYESENT, SOCK_BYERECV])
+        self.state_check([State.SOCK_ESTABLISHED, State.SOCK_BYESENT, State.SOCK_BYERECV])
         bytes_read = 0
         recv_queue = {}
         nack_queue = []
+        out_of_order_queue = []
         segment = b""
         segments_recv = 0
         buffer_ok = True
+        current_window = self.window_size
 
-        try:
-            while (bytes_read < buffer_size):
-                while (segments_recv < self.window_size):
-                    header = self.udp.recvfrom(RAT_HEADER_SIZE)
-                    header = decode_rat_header(header)
-                    integrity_check(header)
-                    flags = flag_decode(header)
-                    udp_length = 0
-                
-                    while (len(segment) < header["length"]):
-                        segment = segment + udp.recvfrom(header["length"])
-                        udp_length = udp_length + len(segment)
-            
-                    if (bytes_read > buffer_size):
-                        # If there's no room in the buffer, discard and NACK
-                        bytes_read = buffer_size
-                        raise IOError
+        full_seg = self.udp.recvfrom(buffer_size)
+        while (len(full_seg) > 0):
+            header = full_seg[0:RAT_HEADER_SIZE]
+            header = self.decode_rat_header(header)
+            if not self.integrity_check(header): 
+                nack_queue.append(header["seq_num"])
+            else:
+                if (self.seq_num != header["seq_num"]):
+                    if (header["seq_num"] in out_of_order_queue):
+                        out_of_order_queue.remove(header["seq_num"])
+                    else:
+                        out_of_order_queue.append(self.seq_num)
+                        self.seq_num = header["seq_num"] + 1
+                else:
+                    self.seq_num = self.seq_num + 1
 
-                    recv_queue[header["seq_num"]] = segment
-                    seq_num = seq_num + 1
-                    
+                recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE:header["length"]]
+                full_seg = full_seg[header["length"]:]
 
-
-                # TODO: ACK/NACK
-
-        except IOError:
-            nack_queue.append(seq_num)
-            nack(seq_num)
+            # At end of window
+            nack_queue = nack_queue + out_of_order_queue
+            if (len(nack_queue) > 0):
+                self.nack(nack_queue)
 
     def close(self):
         '''Attempts to cleanly close a socket and shut down the connection 
