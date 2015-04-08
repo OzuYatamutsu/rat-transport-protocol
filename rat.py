@@ -417,8 +417,8 @@ class RatSocket:
     def is_valid_flagmsg(self, flag_header, flag):
         '''Checks if the given flagged message contains the given flag.'''
 
-        return "flags" not in flag_header or flag \
-            not in self.flag_decode(flag_header["flags"])
+        return "flags" in flag_header and flag \
+             in self.flag_decode(flag_header["flags"])
 
     def zero_pad(self, num, length):
         '''Converts an input number into a binary number, and adds 
