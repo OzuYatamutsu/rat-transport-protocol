@@ -31,4 +31,8 @@ def main():
         test_data = client_sock.recv(len(item) + RAT_HEADER_SIZE)
         if test_data == item: print("RatSocket successfully receieved datagram " + 
                                     str(recv_queue.index(item) + 1) + " from server!")
+
+    print("Now closing the connection.")
+    client_sock.close()
+
 main()
