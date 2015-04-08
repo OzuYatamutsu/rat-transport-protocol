@@ -1,4 +1,4 @@
-from rat import RatSocket
+from rat import RatSocket, RAT_HEADER_SIZE
 from sys import argv
 
 TEST_BYTESTREAM = b"Make sure to drink your ovaltine."
