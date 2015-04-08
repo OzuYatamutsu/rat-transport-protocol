@@ -289,11 +289,11 @@ class RatSocket:
         out_of_order_queue = []
         segment = b""
         segments_recv = 0
-        buffer_ok = True
+        more_to_send = True
         current_window = self.window_size
 
         full_seg = self.udp.recvfrom(buffer_size)[0]
-        while (len(full_seg) > 0):
+        while (len(full_seg) > 0 and more_to_send):
             header = full_seg[0:RAT_HEADER_SIZE]
             header = self.decode_rat_header(header)
             if not self.integrity_check(header): 
@@ -311,12 +311,17 @@ class RatSocket:
 
                 recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE : (RAT_HEADER_SIZE + header["length"])]
                 full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
+            
+            if (Flag.ACK in self.flag_decode(header["flags"])):
+                # This is the last segment in the current stream!
+                more_to_send = False
 
             # At end of window
             nack_queue = nack_queue + out_of_order_queue
             if (len(nack_queue) > 0):
                 if self.debug_mode: print(DEBUG_SENT_NACK)
                 self.nack(nack_queue)
+                more_to_send = True
             else:
                 if self.debug_mode: print(DEBUG_SENT_ACK)
                 self.ack()
@@ -377,7 +382,6 @@ class RatSocket:
         # Sanity check
         if ((length % 16) != 0):
             raise IOError(ERR_MISALIGNED_WORDS)
-
 
         ack = self.construct_header(length, self.flag_set([Flag.NACK]), len(seq_nums))
         ack = ack + ''.join(seq_nums)
@@ -480,6 +484,8 @@ class RatSocket:
         header = header + self.zero_pad(length, 16)
 
         # Add flags
+        if (flags == 0):
+            flags = "00000000"
         header = header + bytes(flags, "utf-8")
 
         # Add offset
