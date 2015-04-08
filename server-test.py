@@ -8,7 +8,12 @@ TEST_BYTESTREAM4 = b"I've got 99 problems, but they start at 1"
 TEST_LONGSTREAM = b"""This is a long bytestream that must be split into multiple segments.
 This is line two of a long bytestream that must be split into multiple segments.
 This is line three of a long bytestream that must be split into multiple segments.
-This is line four of a long bytestream that must be split into multiple segments."""
+This is line four of a long bytestream that must be split into multiple segments.
+This is line five of a long bytestream that must be split into multiple segments.
+This is line six of a long bytestream that must be split into multiple segments.
+This is line seven of a long bytestream that must be split into multiple segments.
+This is line eight of a long bytestream that must be split into multiple segments.
+This is line nine of a long bytestream that must be split into multiple segments."""
 
 send_queue = [TEST_BYTESTREAM, TEST_BYTESTREAM2, TEST_BYTESTREAM3, 
               TEST_BYTESTREAM4, TEST_LONGSTREAM]
@@ -29,7 +34,7 @@ def main():
     else: print("Error: RatSocket didn't receive ACK response!")
 
     for item in send_queue:
-        server_sock.send(TEST_BYTESTREAM)
+        server_sock.send(item)
         print("RatSocket sent stream " + str(send_queue.index(item) + 1) + " to client!")
 
 main()
