@@ -252,25 +252,21 @@ class RatSocket:
                 if self.debug_mode: print(DEBUG_SENT_SEQ.replace("#", str(segment)))
 
             # Wait for ACK or NACK
+            self.seq_num = self.seq_num + 1
             segment_full = self.udp.recvfrom(RAT_MAX_OVERHEAD_BUFFER)[0]
             segment = self.decode_rat_header(segment_full[0:RAT_HEADER_SIZE])
 
             # TODO: Other flags
             if (Flag.ACK in self.flag_decode(segment["flags"])):
                 if self.debug_mode: print(DEBUG_RECV_ACK)
-                if (segment["seq_num"] == self.seq_num):
-                    self.seq_num = self.seq_num + 1
+                
 
-                else:
-                    # PROBLEM HERE - SEQ_NUM MISMATCH
-                    pass
             elif (Flag.NACK in self.flag_decode(segment["flags"])):
                 if self.debug_mode: print(DEBUG_RECV_NACK)
                 nack_queue = data_decode(segment_full[64 : (16 * segment["offset"])])
 
                 # Retransmit NACKed sequence numbers
                 window_queue = [nacked for nacked in window_queue if nacked not in nack_queue]
-                self.seq_num = self.seq_num + 1
 
             else:
                 # PROBLEM HERE - SEGMENT NOT ACK OR NACK
@@ -292,39 +288,44 @@ class RatSocket:
         more_to_send = True
         current_window = self.window_size
 
-        full_seg = self.udp.recvfrom(buffer_size)[0]
-        while (len(full_seg) > 0 and more_to_send):
-            header = full_seg[0:RAT_HEADER_SIZE]
-            header = self.decode_rat_header(header)
-            if not self.integrity_check(header): 
-                nack_queue.append(header["seq_num"])
-            else:
-                if self.debug_mode: print(DEBUG_RECV_SEQ.replace("#", str(header["seq_num"])))
-                if (self.seq_num != header["seq_num"]):
-                    if (header["seq_num"] in out_of_order_queue):
-                        out_of_order_queue.remove(header["seq_num"])
-                    else:
-                        out_of_order_queue.append(self.seq_num)
-                        self.seq_num = header["seq_num"] + 1
+        while (more_to_send):
+            full_seg = self.udp.recvfrom(buffer_size)[0]
+            while (len(full_seg) > 0):
+                header = full_seg[0:RAT_HEADER_SIZE]
+                header = self.decode_rat_header(header)
+                if not self.integrity_check(header): 
+                    nack_queue.append(header["seq_num"])
                 else:
-                    self.seq_num = self.seq_num + 1
+                    if self.debug_mode: print(DEBUG_RECV_SEQ.replace("#", str(header["seq_num"])))
+                    if (self.seq_num != header["seq_num"]):
+                        if (header["seq_num"] in out_of_order_queue):
+                            out_of_order_queue.remove(header["seq_num"])
+                        else:
+                            out_of_order_queue.append(self.seq_num)
+                            self.seq_num = header["seq_num"] + 1
+                    else:
+                        self.seq_num = self.seq_num + 1
 
-                recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE : (RAT_HEADER_SIZE + header["length"])]
-                full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
+                    recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE : (RAT_HEADER_SIZE + header["length"])]
+                    full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
             
-            if (Flag.ACK in self.flag_decode(header["flags"])):
-                # This is the last segment in the current stream!
-                more_to_send = False
+                if (Flag.ACK in self.flag_decode(header["flags"])):
+                    # This is the last segment in the current stream!
+                    more_to_send = False
 
-            # At end of window
-            nack_queue = nack_queue + out_of_order_queue
-            if (len(nack_queue) > 0):
-                if self.debug_mode: print(DEBUG_SENT_NACK)
-                self.nack(nack_queue)
-                more_to_send = True
-            else:
-                if self.debug_mode: print(DEBUG_SENT_ACK)
-                self.ack()
+                current_window = current_window - 1
+
+            if (not more_to_send or current_window == 0):
+                # At end of window
+                nack_queue = nack_queue + out_of_order_queue
+                if (len(nack_queue) > 0):
+                    if self.debug_mode: print(DEBUG_SENT_NACK)
+                    self.nack(nack_queue)
+                    more_to_send = True
+                else:
+                    if self.debug_mode: print(DEBUG_SENT_ACK)
+                    self.ack()
+                current_window = self.window_size
 
         # Reorder data and return
         out_queue = list(recv_queue)
@@ -376,15 +377,15 @@ class RatSocket:
         '''Sends a notice that the data associated with 
         the given sequence numbers was not received.'''
 
-        seq_nums = list(self.zero_pad(x) for x in seq_nums)
-        length = len(''.join(seq_nums))
+        seq_nums = ''.join(list(str(self.zero_pad(x, 16), "utf-8") for x in seq_nums))
+        length = len(seq_nums)
 
         # Sanity check
         if ((length % 16) != 0):
             raise IOError(ERR_MISALIGNED_WORDS)
 
         ack = self.construct_header(length, self.flag_set([Flag.NACK]), len(seq_nums))
-        ack = ack + ''.join(seq_nums)
+        ack = ack + bytes(seq_nums, "utf-8")
         retry_times = RAT_RETRY_TIMES
         sent = False
 
