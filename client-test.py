@@ -25,5 +25,5 @@ def main():
     for item in recv_queue:
         test_data = client_sock.recv(len(item) + RAT_HEADER_SIZE)
         if test_data == item: print("RatSocket successfully receieved datagram " + 
-                                    str(recv_queue.index(item) + 1) + "from server!")
+                                    str(recv_queue.index(item) + 1) + " from server!")
 main()

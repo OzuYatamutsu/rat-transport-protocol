@@ -30,6 +30,6 @@ def main():
 
     for item in send_queue:
         server_sock.send(TEST_BYTESTREAM)
-        print("RatSocket sent stream " + str(send_queue.index(item) + 1) + "to client!")
+        print("RatSocket sent stream " + str(send_queue.index(item) + 1) + " to client!")
 
 main()

@@ -89,7 +89,7 @@ class RatSocket:
         # State overhead
         self.stream_id = 0
         self.seq_num = 0
-        self.window_size = 0
+        self.window_size = RAT_DEFAULT_WINDOW
 
         # Other values
         self.local_addr = ("localhost", 0)
@@ -253,10 +253,10 @@ class RatSocket:
 
             # Wait for ACK or NACK
             segment_full = self.udp.recvfrom(RAT_MAX_OVERHEAD_BUFFER)[0]
-            segment = self.decode_rat_header(segment)[0:64]
+            segment = self.decode_rat_header(segment_full[0:RAT_HEADER_SIZE])
 
             # TODO: Other flags
-            if (Flag.ACK in flag_decode(segment["flags"])):
+            if (Flag.ACK in self.flag_decode(segment["flags"])):
                 if self.debug_mode: print(DEBUG_RECV_ACK)
                 if (segment["seq_num"] == self.seq_num):
                     self.seq_num = self.seq_num + 1
@@ -264,7 +264,7 @@ class RatSocket:
                 else:
                     # PROBLEM HERE - SEQ_NUM MISMATCH
                     pass
-            elif (Flag.NACK in flag_decode(segment["flags"])):
+            elif (Flag.NACK in self.flag_decode(segment["flags"])):
                 if self.debug_mode: print(DEBUG_RECV_NACK)
                 nack_queue = data_decode(segment_full[64 : (16 * segment["offset"])])
 
