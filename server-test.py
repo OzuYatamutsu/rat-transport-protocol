@@ -25,7 +25,7 @@ def main():
     else: print("Error: RatSocket didn't receive ACK response!")
 
     for item in send_queue:
-        client_sock.send(TEST_BYTESTREAM)
-        print("RatSocket sent stream " + str(send_queue.index(item) + 1) + "to server!")
+        server_sock.send(TEST_BYTESTREAM)
+        print("RatSocket sent stream " + str(send_queue.index(item) + 1) + "to client!")
 
 main()
