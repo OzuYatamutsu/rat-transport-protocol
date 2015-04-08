@@ -296,6 +296,8 @@ class RatSocket:
             nack_queue = nack_queue + out_of_order_queue
             if (len(nack_queue) > 0):
                 self.nack(nack_queue)
+            else:
+                self.ack()
 
     def close(self):
         '''Attempts to cleanly close a socket and shut down the connection 
