@@ -40,6 +40,10 @@ DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent HLO, ACK to client."
 DEBUG_SERV_RECV_ACK = DEBUG_PREFIX + "Receieved ACK (SOCK_ESTABLISHED)."
 DEBUG_SENT_ACK = DEBUG_PREFIX + "Sent ACK."
 DEBUG_RECV_ACK = DEBUG_PREFIX + "Receieved ACK."
+DEBUG_SENT_NACK = DEBUG_PREFIX + "Sent NACK."
+DEBUG_RECV_NACK = DEBUG_PREFIX + "Receieved NACK."
+DEBUG_SENT_SEQ = DEBUG_PREFIX + "Sent segment #."
+DEBUG_RECV_SEQ = DEBUG_PREFIX + "Received segment #."
 DEBUG_RETRY_FAIL = DEBUG_PREFIX + "Too many failed retransmits; giving up."
 
 ## RAT connection states
@@ -136,6 +140,8 @@ class RatSocket:
             client.current_state = State.SOCK_HLORECV
             client.stream_id = randrange(1, RAT_MAX_STREAM_ID)
             client.window_size = RAT_DEFAULT_WINDOW
+            # Debug
+            self.stream_id = client.stream_id
 
             self.active_streams.append(client)
             client.seq_num = client.seq_num + 1
@@ -162,6 +168,7 @@ class RatSocket:
             if self.debug_mode: print(DEBUG_SERV_RECV_ACK)
             client.current_state = State.SOCK_ESTABLISHED
             self.current_state = State.SOCK_ESTABLISHED
+            self.seq_num = 1
 
             return client
         else: return False # HLO not in flags
@@ -200,6 +207,7 @@ class RatSocket:
                 segment = self.decode_rat_header(segment)
                 self.stream_id = segment["stream_id"]
                 self.seq_num = segment["seq_num"]
+                self.window_size = RAT_DEFAULT_WINDOW
                 if self.debug_mode: print(DEBUG_CLI_RECV_HLOACK)
             except Exception:
                 retry_times = retry_times - 1
@@ -208,6 +216,7 @@ class RatSocket:
         if self.debug_mode: print(DEBUG_CLI_SENT_ACK)
 
         segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
+        self.seq_num = 1
         self.udp.sendto(segment, self.remote_addr)
         self.current_state = State.SOCK_ESTABLISHED
 
@@ -221,7 +230,8 @@ class RatSocket:
             byte_stream = byte_stream[RAT_PAYLOAD_SIZE:]
 
             if (len(byte_stream) == 0):
-                send_queue[self.seq_num] = self.construct_header(len(data), self.flag_set([Flag.ACK]), 0)
+                send_queue[self.seq_num] = self.construct_header(len(data), 
+                    self.flag_set([Flag.ACK]), 0) + data
             else:
                 send_queue[self.seq_num] = self.construct_header(len(data), 0, 0) + data
             self.seq_num = self.seq_num + 1
@@ -232,7 +242,8 @@ class RatSocket:
             window_queue = list_queue[0:self.window_size]
 
             for segment in window_queue:
-                udp.sendto(send_queue[segment], self.remote_addr)
+                self.udp.sendto(send_queue[segment], self.remote_addr)
+                if self.debug_mode: print(DEBUG_SENT_SEQ.replace("#", str(segment)))
 
             # Wait for ACK or NACK
             segment_full = self.udp.recvfrom(RAT_MAX_OVERHEAD_BUFFER)[0]
@@ -240,6 +251,7 @@ class RatSocket:
 
             # TODO: Other flags
             if (Flag.ACK in flag_decode(segment["flags"])):
+                if self.debug_mode: print(DEBUG_RECV_ACK)
                 if (segment["seq_num"] == self.seq_num):
                     self.seq_num = self.seq_num + 1
 
@@ -247,6 +259,7 @@ class RatSocket:
                     # PROBLEM HERE - SEQ_NUM MISMATCH
                     pass
             elif (Flag.NACK in flag_decode(segment["flags"])):
+                if self.debug_mode: print(DEBUG_RECV_NACK)
                 nack_queue = data_decode(segment_full[64 : (16 * segment["offset"])])
 
                 # Retransmit NACKed sequence numbers
@@ -273,13 +286,14 @@ class RatSocket:
         buffer_ok = True
         current_window = self.window_size
 
-        full_seg = self.udp.recvfrom(buffer_size)
+        full_seg = self.udp.recvfrom(buffer_size)[0]
         while (len(full_seg) > 0):
             header = full_seg[0:RAT_HEADER_SIZE]
             header = self.decode_rat_header(header)
             if not self.integrity_check(header): 
                 nack_queue.append(header["seq_num"])
             else:
+                if self.debug_mode: print(DEBUG_RECV_SEQ.replace("#", str(header["seq_num"])))
                 if (self.seq_num != header["seq_num"]):
                     if (header["seq_num"] in out_of_order_queue):
                         out_of_order_queue.remove(header["seq_num"])
@@ -289,15 +303,27 @@ class RatSocket:
                 else:
                     self.seq_num = self.seq_num + 1
 
-                recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE:header["length"]]
-                full_seg = full_seg[header["length"]:]
+                recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE : (RAT_HEADER_SIZE + header["length"])]
+                full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
 
             # At end of window
             nack_queue = nack_queue + out_of_order_queue
             if (len(nack_queue) > 0):
+                if self.debug_mode: print(DEBUG_SENT_NACK)
                 self.nack(nack_queue)
             else:
+                if self.debug_mode: print(DEBUG_SENT_ACK)
                 self.ack()
+
+        # Reorder data and return
+        out_queue = list(recv_queue)
+        out_queue.sort()
+
+        output = b""
+        for seg_data in out_queue:
+            output = output + recv_queue[seg_data]
+
+        return output
 
     def close(self):
         '''Attempts to cleanly close a socket and shut down the connection 
@@ -339,7 +365,7 @@ class RatSocket:
         '''Sends a notice that the data associated with 
         the given sequence numbers was not received.'''
 
-        seq_nums = list(zero_pad(x) for x in seq_nums)
+        seq_nums = list(self.zero_pad(x) for x in seq_nums)
         length = len(''.join(seq_nums))
 
         # Sanity check
@@ -385,11 +411,12 @@ class RatSocket:
                 raise IOError(ERR_STATE)
 
     def integrity_check(self, header):
-        '''Raises an error if this header is not destined 
+        '''Returns False if this header is not destined 
         for the current stream.'''
 
-        if header[0] != self.stream_id:
-            raise IOError
+        if header["stream_id"] != self.stream_id:
+            return False
+        return True
 
     def flag_decode(self, flag_field_bits):
         '''Returns the flags set in a RAT header.'''

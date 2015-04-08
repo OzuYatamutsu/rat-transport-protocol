@@ -1,4 +1,4 @@
-from rat import RatSocket
+from rat import RatSocket, RAT_HEADER_SIZE
 from sys import argv
 
 TEST_BYTESTREAM = b"Make sure to drink your ovaltine."
@@ -14,7 +14,7 @@ def main():
     if client is not False: print("RatSocket accepted connection from client!")
     else: print("Error: RatSocket didn't receive ACK response!")
 
-    test_data = server_sock.recv(len(TEST_BYTESTREAM))
-    if test_data is TEST_BYTESTREAM: print("RatSocket successfully receieved datagram from client!")
+    test_data = server_sock.recv(len(TEST_BYTESTREAM) + RAT_HEADER_SIZE)
+    if test_data == TEST_BYTESTREAM: print("RatSocket successfully receieved datagram from client!")
 
 main()
