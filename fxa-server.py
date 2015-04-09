@@ -1,9 +1,10 @@
 from rat import *
 from sys import argv
-from os import _exit
+from os import _exit, getcwd, sep, path, makedirs
 
 RECV_GET = "<server> Got a GET request!"
 MSG_LISTENING = "<server> Now listening for connections..."
+MSG_WAITING = "<server> Waiting for command from client..."
 ERR_PORT_EVEN = "Error: Sorry! This assignment specifies an " + \
     "input port must be an odd number!"
 ERR_INPUT_ARGS = "Error: Address or port numbers invalid!"
@@ -15,6 +16,8 @@ CMD_GET = "get"
 CMD_POST = "post"
 CMD_WINDOW = "window"
 COMMAND_BUFFER_SIZE = 10
+FILE_FOLDER = getcwd() + sep + "serv_files"
+
 def main():
     '''The entry point of the program.'''
 
@@ -41,28 +44,51 @@ def main():
     local_port = int(local_port)
     netemu_port = int(netemu_port)
 
+    if not path.exists(FILE_FOLDER):
+        makedirs(FILE_FOLDER)
+
     server_loop(local_port, netemu_ip, netemu_port)
 
 def server_loop(local_port, netemu_ip, netemu_port):
     '''The main loop of the server.'''
 
     server_sock = RatSocket(debug_mode=True)
-    server_sock.listen(("127.0.0.1", local_port))
+    server_sock.listen("127.0.0.1", local_port, 1)
     print(MSG_LISTENING)
     # Wait for client
     client = server_sock.accept()
     while True:
         # Wait for command
-        cmd = server_sock.recv(RAT_HEADER_SIZE+ COMMAND_BUFFER_SIZE)
+        print(MSG_WAITING)
+        cmd = server_sock.recv(RAT_HEADER_SIZE + COMMAND_BUFFER_SIZE)
         cmd = str(cmd, "utf-8")
-        
+        args = cmd[cmd.index(" ") + 1:]
+        cmd = cmd[0:cmd.index(" ")]
+
         # Command parsing
         if (cmd == CMD_GET):
             print(RECV_GET)
+            
+            handle_get(args)
         elif (cmd == CMD_POST):
             print(MSG_NOT_IMPLEMENTED)
         else:
             print("Invalid command")
+
+def handle_get(filename):
+    '''Sends the file requested by a GET request, or returns False.'''
+
+    if not path.exists(FILE_FOLDER + sep + filename):
+        return False
+
+    # Open file as bytestream
+    file = open(FILE_FOLDER + sep + filename, "r")
+    file_bytes = file.read()
+    file.close()
+
+    server_sock.send(file_bytes)
+    return True
+
 
 def address_check(ip_addr):
     '''Checks if a given IP address is valid.'''

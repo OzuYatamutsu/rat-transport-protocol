@@ -205,7 +205,7 @@ class RatSocket:
                 self.local_addr = ("127.0.0.1", local_port)
                 self.udp.bind(self.local_addr)
                 # Update port number
-                self.local_addr = ("127.0.0.1", self.udp.getsockname[1])
+                self.local_addr = ("127.0.0.1", self.udp.getsockname()[1])
                 self.udp.sendto(segment, self.remote_addr)
                 self.current_state = State.SOCK_HLOSENT
 

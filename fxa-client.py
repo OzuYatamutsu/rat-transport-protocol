@@ -46,8 +46,8 @@ def main():
         print(ERR_INPUT_ARGS)
         _exit(0)
 
-    if (int(local_port) % 2 != 1):
-        print(ERR_PORT_EVEN)
+    if (int(local_port) % 2 != 0):
+        print(ERR_PORT_ODD)
         _exit(0)
 
     local_port = int(local_port)
@@ -85,6 +85,7 @@ def client_loop(local_port, netemu_ip, netemu_port):
                 client_sock.close()
                 print(MSG_DISCONNECT)
 
+            console_active = False
             print(MSG_BYE)
         else:
             print(ERR_INVALID_CMD)
