@@ -364,7 +364,6 @@ class RatSocket:
                     full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
 
                 if (Flag.SWIN in self.flag_decode(header["flags"])):
-                    self.seq_num = self.seq_num + 1
                     if self.debug_mode: print(DEBUG_RECV_SWIN)
 
                     # Change window size
