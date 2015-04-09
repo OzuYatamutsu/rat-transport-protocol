@@ -1,7 +1,8 @@
 from rat import *
 from sys import argv
-from os import _exit
+from os import _exit, path, sep, getcwd
 
+OK_SIZE = RAT_HEADER_SIZE + 2
 MSG_CMD = "Ready for commands!"
 MSG_CONNECTING = "Connecting to "
 MSG_CONNECTED = "Connected to server!"
@@ -18,8 +19,11 @@ ERR_INVALID_ARGS = "Syntax: fxa-client.py <local port #> " + \
     "<NetEmu IP address> <NetEmu port #>"
 MSG_FILE_NOT_FOUND = "File wasn't found on the server."
 MSG_GET_NO_ARG = "Please specify a filename for the get command."
+MSG_POST_NO_ARG = "Please specify a filename for the post command."
 MSG_SOCK_NOT_OPENED_DISCONN = "The socket was never connected " + \
 "- assuming you want to quit!"
+MSG_POST_NOT_FOUND = "File specified wasn't found."
+MSG_POST_OK = "File sent to server!"
 MSG_NOT_IMPLEMENTED = "Sorry, this command isn't implemented yet."
 MSG_DISCONNECT = "Disconnected from server."
 MSG_BYE = "Quitting, bye!"
@@ -85,7 +89,7 @@ def client_loop(local_port, netemu_ip, netemu_port):
             else:
                 print(MSG_CONNECTED_ALREADY)
         elif (cmd == CMD_GET):
-            if (client_sock.current_state == State.SOCK_UNOPENED):
+            if (client_sock.current_state == State.SOCK_ESTABLISHED):
                 if (len(args.replace(" ", "")) > 0):
                     client_sock.send(cmd + " " + args)
 
@@ -104,7 +108,16 @@ def client_loop(local_port, netemu_ip, netemu_port):
             else:
                 print(MSG_NOT_CONNECTED)
         elif (cmd == CMD_POST):
-            print(MSG_NOT_IMPLEMENTED)
+            if (client_sock.current_state == State.SOCK_ESTABLISHED):
+                if (len(args.replace(" ", "")) > 0):
+                    if handle_post(client_sock, args):
+                        print(MSG_POST_OK)
+                    else:
+                        print(MSG_POST_NOT_FOUND)
+                else:
+                    print(MSG_POST_NO_ARG)
+            else:
+                print(MSG_NOT_CONNECTED)
         elif (cmd == CMD_WINDOW):
             print(MSG_NOT_IMPLEMENTED)
         elif (cmd == CMD_DISCONN):
@@ -144,6 +157,25 @@ def port_check(port):
     except Exception:
         return False
 
+    return True
+
+def handle_post(client_sock, filename):
+    '''Sends the file requested by a POST request, or returns False.'''
+
+    client_sock.send(CMD_POST + " " + filename)
+
+    # Wait for OK to send
+    client_sock.recv(OK_SIZE)
+
+    if not path.exists(getcwd() + sep + filename):
+        return False
+
+    # Open file as bytestream
+    file = open(getcwd() + sep + filename, "rb")
+    file_bytes = file.read()
+    file.close()
+
+    client_sock.send(file_bytes)
     return True
 
 main()

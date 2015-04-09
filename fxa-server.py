@@ -2,7 +2,9 @@ from rat import *
 from sys import argv
 from os import _exit, getcwd, sep, path, makedirs
 
+SERVER_OK = b"OK"
 RECV_GET = "<server> Got a GET request!"
+RECV_POST = "<server> Got a POST request!"
 MSG_LISTENING = "<server> Now listening for connections..."
 MSG_WAITING = "<server> Waiting for command from client..."
 ERR_PORT_EVEN = "Error: Sorry! This assignment specifies an " + \
@@ -15,8 +17,9 @@ CMD_DISCONN = "disconnect"
 CMD_GET = "get"
 CMD_POST = "post"
 CMD_WINDOW = "window"
-COMMAND_BUFFER_SIZE = 16
+COMMAND_BUFFER_SIZE = 64
 FILE_FOLDER = getcwd() + sep + "serv_files"
+POST_MAX_BUFFER = 650000
 
 def main():
     '''The entry point of the program.'''
@@ -72,7 +75,9 @@ def server_loop(local_port, netemu_ip, netemu_port):
             
             handle_get(server_sock, args)
         elif (cmd == CMD_POST):
-            print(MSG_NOT_IMPLEMENTED)
+            print(RECV_POST)
+
+            handle_post(server_sock, args)
         # Else ignore it
 
 def handle_get(server_sock, filename):
@@ -90,6 +95,23 @@ def handle_get(server_sock, filename):
     server_sock.send(file_bytes)
     return True
 
+def handle_post(server_sock, filename):
+    '''Downloads the file sent by a POST request, or returns False.'''
+
+    # Hey client! OK to send!
+    server_sock.send(SERVER_OK)
+
+    try:
+        file_stream = server_sock.recv(POST_MAX_BUFFER)
+
+        # Open file as bytestream
+        file = open(FILE_FOLDER + sep + filename, "wb")
+        file.write(file_stream)
+        file.close()
+
+        return True
+    except Exception:
+        return False
 
 def address_check(ip_addr):
     '''Checks if a given IP address is valid.'''
