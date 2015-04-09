@@ -79,6 +79,7 @@ def handle_get(server_sock, filename):
     '''Sends the file requested by a GET request, or returns False.'''
 
     if not path.exists(FILE_FOLDER + sep + filename):
+        server_sock.send(b"FILE_NOT_FOUND")
         return False
 
     # Open file as bytestream

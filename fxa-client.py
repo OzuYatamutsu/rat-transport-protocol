@@ -7,6 +7,8 @@ MSG_CONNECTING = "Connecting to "
 MSG_CONNECTED = "Connected to server!"
 MSG_ENTER_CMD = "Please enter a command. \nValid choices are: " + \
     "connect, disconnect, get, post, window"
+MSG_NOT_CONNECTED = "You are not connected to a server."
+MSG_CONNECTED_ALREADY = "This socket is already connected or closed!"
 MSG_CONNECT_FAIL = "Connection to server failed!"
 ERR_INVALID_CMD = "Sorry! That's not a valid command."
 ERR_PORT_ODD = "Error: Sorry! This assignment specifies an " + \
@@ -14,6 +16,8 @@ ERR_PORT_ODD = "Error: Sorry! This assignment specifies an " + \
 ERR_INPUT_ARGS = "Error: Address or port numbers invalid!"
 ERR_INVALID_ARGS = "Syntax: fxa-client.py <local port #> " + \
     "<NetEmu IP address> <NetEmu port #>"
+MSG_FILE_NOT_FOUND = "File wasn't found on the server."
+MSG_GET_NO_ARG = "Please specify a filename for the get command."
 MSG_SOCK_NOT_OPENED_DISCONN = "The socket was never connected " + \
 "- assuming you want to quit!"
 MSG_NOT_IMPLEMENTED = "Sorry, this command isn't implemented yet."
@@ -71,22 +75,34 @@ def client_loop(local_port, netemu_ip, netemu_port):
         args = user_input[user_input.index(" ") + 1:] if " " in user_input else ""
 
         if (cmd == CMD_CONNECT):
-            print(MSG_CONNECTING + netemu_ip + ":" + str(netemu_port) + "...")
-            try:
-                client_sock.connect(netemu_ip, netemu_port, local_port=local_port)
-                print(MSG_CONNECTED)
-            except Exception:
-                print(MSG_CONNECT_FAIL)
+            if (client_sock.current_state == State.SOCK_UNOPENED):
+                print(MSG_CONNECTING + netemu_ip + ":" + str(netemu_port) + "...")
+                try:
+                    client_sock.connect(netemu_ip, netemu_port, local_port=local_port)
+                    print(MSG_CONNECTED)
+                except Exception:
+                    print(MSG_CONNECT_FAIL)
+            else:
+                print(MSG_CONNECTED_ALREADY)
         elif (cmd == CMD_GET):
-            client_sock.send(cmd + " " + args)
+            if (client_sock.current_state == State.SOCK_UNOPENED):
+                if (len(args.replace(" ", "")) > 0):
+                    client_sock.send(cmd + " " + args)
 
-            # Receive file
-            file_stream = client_sock.recv(UDP_FILE_BUFFER_SIZE)
+                    # Receive file
+                    file_stream = client_sock.recv(UDP_FILE_BUFFER_SIZE)
 
-            # Write contents to file
-            f = open(args, "wb")
-            f.write(file_stream)
-            f.close()
+                    if (file_stream == b"FILE_NOT_FOUND"):
+                        print(MSG_FILE_NOT_FOUND)
+                    else:
+                        # Write contents to file
+                        f = open(args, "wb")
+                        f.write(file_stream)
+                        f.close()
+                else:
+                    print(MSG_GET_NO_ARG)
+            else:
+                print(MSG_NOT_CONNECTED)
         elif (cmd == CMD_POST):
             print(MSG_NOT_IMPLEMENTED)
         elif (cmd == CMD_WINDOW):
