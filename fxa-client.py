@@ -20,6 +20,8 @@ ERR_INVALID_ARGS = "Syntax: fxa-client.py <local port #> " + \
 MSG_FILE_NOT_FOUND = "File wasn't found on the server."
 MSG_GET_NO_ARG = "Please specify a filename for the get command."
 MSG_POST_NO_ARG = "Please specify a filename for the post command."
+MSG_WINDOW_NO_ARG = "Please specify a window size for the window command."
+MSG_INVALID_WINDOW = "Please enter a valid window size number."
 MSG_SOCK_NOT_OPENED_DISCONN = "The socket was never connected " + \
 "- assuming you want to quit!"
 MSG_POST_NOT_FOUND = "File specified wasn't found."
@@ -119,7 +121,17 @@ def client_loop(local_port, netemu_ip, netemu_port):
             else:
                 print(MSG_NOT_CONNECTED)
         elif (cmd == CMD_WINDOW):
-            print(MSG_NOT_IMPLEMENTED)
+            if (client_sock.current_state == State.SOCK_ESTABLISHED):
+                if (len(args.replace(" ", "")) > 0):
+                    try:
+                        args = int(args)
+                        client_sock.set_window(args)
+                    except ValueError:
+                        print(MSG_INVALID_WINDOW)
+                else:
+                    print(MSG_WINDOW_NO_ARG)
+            else:
+                print(MSG_NOT_CONNECTED)
         elif (cmd == CMD_DISCONN):
             if (client_sock.current_state == State.SOCK_UNOPENED):
                 print(MSG_SOCK_NOT_OPENED_DISCONN)
