@@ -519,7 +519,8 @@ class RatSocket:
         seq_num = int(raw_segment[16:32], 2)
         seq_num = seq_num + offset
 
-        return bytes(header[0:16] + self.zero_pad(seq_num, 16) + header[32:], "utf-8") + raw_segment[RAT_HEADER_SIZE:] # TODO: This fails
+        return bytes(header[0:16], "utf-8") + self.zero_pad(seq_num, 16) + \
+                bytes(header[32:], "utf-8") + raw_segment[RAT_HEADER_SIZE:]
 
     def data_decode(self, data, num_words):
         '''Returns a list of 16-bit numbers from a RAT payload.'''
