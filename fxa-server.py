@@ -15,7 +15,7 @@ CMD_DISCONN = "disconnect"
 CMD_GET = "get"
 CMD_POST = "post"
 CMD_WINDOW = "window"
-COMMAND_BUFFER_SIZE = 10
+COMMAND_BUFFER_SIZE = 16
 FILE_FOLDER = getcwd() + sep + "serv_files"
 
 def main():
@@ -70,20 +70,20 @@ def server_loop(local_port, netemu_ip, netemu_port):
         if (cmd == CMD_GET):
             print(RECV_GET)
             
-            handle_get(args)
+            handle_get(server_sock, args)
         elif (cmd == CMD_POST):
             print(MSG_NOT_IMPLEMENTED)
         else:
             print("Invalid command")
 
-def handle_get(filename):
+def handle_get(server_sock, filename):
     '''Sends the file requested by a GET request, or returns False.'''
 
     if not path.exists(FILE_FOLDER + sep + filename):
         return False
 
     # Open file as bytestream
-    file = open(FILE_FOLDER + sep + filename, "r")
+    file = open(FILE_FOLDER + sep + filename, "rb")
     file_bytes = file.read()
     file.close()
 

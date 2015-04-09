@@ -33,7 +33,7 @@ ERR_NUM_OUT_OF_RANGE = ERR_PREFIX + "Number out of range!"
 DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
 DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
 DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending HLO (SOCK_HLOSENT)."
-DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending BYE (SOCK_BYESENT)."
+DEBUG_CLI_SENT_BYE = DEBUG_PREFIX + "Sending BYE (SOCK_BYESENT)."
 DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Receieved HLO, ACK from server (SOCK_ESTABLISHED)."
 DEBUG_CLI_SENT_ACK = DEBUG_PREFIX + "Sent ACK (SOCK_ESTABLISHED)."
 DEBUG_SERV_RECV_HLO = DEBUG_PREFIX + "Received HLO (SOCK_HLORECV)."
@@ -233,6 +233,12 @@ class RatSocket:
         '''Sends a byte-stream.'''
 
         send_queue = {}
+        windows_elapsed = 0
+
+        if (type(byte_stream) is int):
+            byte_stream = bytes(str(byte_stream), "utf-8")
+        elif (type(byte_stream) is str):
+            byte_stream = bytes(byte_stream, "utf-8")
 
         while (len(byte_stream) != 0):
             data = byte_stream[0:RAT_PAYLOAD_SIZE]
@@ -251,22 +257,22 @@ class RatSocket:
             window_queue = list_queue[0:self.window_size]
 
             for segment in window_queue:
+                send_queue[segment] = self.shift_sequence_number(send_queue[segment], windows_elapsed)
                 self.udp.sendto(send_queue[segment], self.remote_addr)
                 if self.debug_mode: print(DEBUG_SENT_SEQ.replace("#", str(segment)))
 
             # Wait for ACK or NACK
-            self.seq_num = self.seq_num + 1
             segment_full = self.udp.recvfrom(RAT_MAX_OVERHEAD_BUFFER)[0]
             segment = self.decode_rat_header(segment_full[0:RAT_HEADER_SIZE])
 
             # TODO: Other flags
             if (Flag.ACK in self.flag_decode(segment["flags"])):
                 if self.debug_mode: print(DEBUG_RECV_ACK)
-                
+                windows_elapsed = windows_elapsed + 1
 
             elif (Flag.NACK in self.flag_decode(segment["flags"])):
                 if self.debug_mode: print(DEBUG_RECV_NACK)
-                nack_queue = data_decode(segment_full[64 : (16 * segment["offset"])])
+                nack_queue = self.data_decode(segment_full[64 : (16 * segment["offset"])], segment["offset"])
 
                 # Retransmit NACKed sequence numbers
                 window_queue = [nacked for nacked in window_queue if nacked not in nack_queue]
@@ -274,6 +280,8 @@ class RatSocket:
             else:
                 # PROBLEM HERE - SEGMENT NOT ACK OR NACK
                 pass
+
+            self.seq_num = self.seq_num + 1
 
             # Remove from buffer
             list_queue = [unsent for unsent in list_queue if unsent not in window_queue]
@@ -474,16 +482,18 @@ class RatSocket:
 
         return bytes((padding * '0') + num, "utf-8")
         
-    def construct_header(self, length, flags, offset):
+    def construct_header(self, length, flags, offset, seq_num=0):
         '''Constructs an 8-byte long RAT header.'''
 
         header = b""
+        if (seq_num == 0):
+            seq_num = self.seq_num
 
         # Add stream_id
         header = header + self.zero_pad(self.stream_id, 16)
 
         # Add seq_num
-        header = header + self.zero_pad(self.seq_num, 16)
+        header = header + self.zero_pad(seq_num, 16)
 
         # Add length
         header = header + self.zero_pad(length, 16)
@@ -497,6 +507,19 @@ class RatSocket:
         header = header + self.zero_pad(offset, 8)
 
         return header
+
+    def shift_sequence_number(self, raw_segment, offset):
+        '''Adds an offset to a raw RAT segment's seqence number.'''
+
+        if (offset == 0):
+            return raw_segment
+
+        header = raw_segment[0:RAT_HEADER_SIZE]
+        header = str(header, "utf-8")
+        seq_num = int(raw_segment[16:32], 2)
+        seq_num = seq_num + offset
+
+        return bytes(header[0:16] + self.zero_pad(seq_num, 16) + header[32:], "utf-8") + raw_segment[RAT_HEADER_SIZE:]
 
     def data_decode(self, data, num_words):
         '''Returns a list of 16-bit numbers from a RAT payload.'''

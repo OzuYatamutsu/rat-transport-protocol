@@ -26,6 +26,7 @@ CMD_GET = "get"
 CMD_POST = "post"
 CMD_WINDOW = "window"
 COMMANDS = [CMD_CONNECT, CMD_DISCONN, CMD_GET, CMD_POST, CMD_WINDOW]
+UDP_FILE_BUFFER_SIZE = 650000
 
 def main():
     '''The entry point of the program.'''
@@ -77,7 +78,15 @@ def client_loop(local_port, netemu_ip, netemu_port):
             except Exception:
                 print(MSG_CONNECT_FAIL)
         elif (cmd == CMD_GET):
-            pass
+            client_sock.send(cmd + " " + args)
+
+            # Receive file
+            file_stream = client_sock.recv(UDP_FILE_BUFFER_SIZE)
+
+            # Write contents to file
+            f = open(args, "wb")
+            f.write(file_stream)
+            f.close()
         elif (cmd == CMD_POST):
             print(MSG_NOT_IMPLEMENTED)
         elif (cmd == CMD_WINDOW):
