@@ -65,20 +65,24 @@ def client_loop(local_port, netemu_ip, netemu_port):
     while console_active:
         print(MSG_ENTER_CMD)
         user_input = input(CMD_PROMPT)
-        if (user_input == CMD_CONNECT):
+        
+        cmd = user_input[0:user_input.index(" ")] if " " in user_input else user_input
+        args = user_input[user_input.index(" ") + 1:] if " " in user_input else ""
+
+        if (cmd == CMD_CONNECT):
             print(MSG_CONNECTING + netemu_ip + ":" + str(netemu_port) + "...")
             try:
                 client_sock.connect(netemu_ip, netemu_port, local_port=local_port)
                 print(MSG_CONNECTED)
             except Exception:
                 print(MSG_CONNECT_FAIL)
-        elif (user_input == CMD_GET):
+        elif (cmd == CMD_GET):
             pass
-        elif (user_input == CMD_POST):
+        elif (cmd == CMD_POST):
             print(MSG_NOT_IMPLEMENTED)
-        elif (user_input == CMD_WINDOW):
+        elif (cmd == CMD_WINDOW):
             print(MSG_NOT_IMPLEMENTED)
-        elif (user_input == CMD_DISCONN):
+        elif (cmd == CMD_DISCONN):
             if (client_sock.current_state == State.SOCK_UNOPENED):
                 print(MSG_SOCK_NOT_OPENED_DISCONN)
             else:

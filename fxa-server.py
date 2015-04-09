@@ -60,6 +60,7 @@ def server_loop(local_port, netemu_ip, netemu_port):
     while True:
         # Wait for command
         print(MSG_WAITING)
+        server_sock.udp.settimeout(None) # No more timeout once we have a client
         cmd = server_sock.recv(RAT_HEADER_SIZE + COMMAND_BUFFER_SIZE)
         cmd = str(cmd, "utf-8")
         args = cmd[cmd.index(" ") + 1:]

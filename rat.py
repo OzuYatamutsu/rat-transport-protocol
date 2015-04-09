@@ -33,6 +33,7 @@ ERR_NUM_OUT_OF_RANGE = ERR_PREFIX + "Number out of range!"
 DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
 DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
 DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending HLO (SOCK_HLOSENT)."
+DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending BYE (SOCK_BYESENT)."
 DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Receieved HLO, ACK from server (SOCK_ESTABLISHED)."
 DEBUG_CLI_SENT_ACK = DEBUG_PREFIX + "Sent ACK (SOCK_ESTABLISHED)."
 DEBUG_SERV_RECV_HLO = DEBUG_PREFIX + "Received HLO (SOCK_HLORECV)."
@@ -345,10 +346,9 @@ class RatSocket:
 
         # Timeout begins now!
         self.udp.settimeout(RAT_BYE_TIMEOUT)
+        retry_times = RAT_RETRY_TIMES
 
         # Send BYE
-        if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
-
         while (retry_times != 0):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.BYE]), 0)
@@ -356,6 +356,8 @@ class RatSocket:
                 self.current_state = State.SOCK_BYESENT
             except Exception:
                 retry_times = retry_times - 1
+
+        if self.debug_mode: print(DEBUG_CLI_SENT_BYE)
 
         # Remaining is handled by recv() and close_halfopen()
 
