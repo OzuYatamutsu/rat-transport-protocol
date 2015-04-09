@@ -2,13 +2,19 @@ from rat import *
 from sys import argv
 from os import _exit
 
+RECV_GET = "<server> Got a GET request!"
 MSG_LISTENING = "<server> Now listening for connections..."
 ERR_PORT_EVEN = "Error: Sorry! This assignment specifies an " + \
     "input port must be an odd number!"
 ERR_INPUT_ARGS = "Error: Address or port numbers invalid!"
 ERR_INVALID_ARGS = "Syntax: fxa-server.py <local port #> " + \
     "<NetEmu IP address> <NetEmu port #>"
-
+CMD_CONNECT = "connect"
+CMD_DISCONN = "disconnect"
+CMD_GET = "get"
+CMD_POST = "post"
+CMD_WINDOW = "window"
+COMMAND_BUFFER_SIZE = 10
 def main():
     '''The entry point of the program.'''
 
@@ -43,9 +49,20 @@ def server_loop(local_port, netemu_ip, netemu_port):
     server_sock = RatSocket(debug_mode=True)
     server_sock.listen(("127.0.0.1", local_port))
     print(MSG_LISTENING)
+    # Wait for client
+    client = server_sock.accept()
     while True:
-        # Loop here
-        pass
+        # Wait for command
+        cmd = server_sock.recv(RAT_HEADER_SIZE+ COMMAND_BUFFER_SIZE)
+        cmd = str(cmd, "utf-8")
+        
+        # Command parsing
+        if (cmd == CMD_GET):
+            print(RECV_GET)
+        elif (cmd == CMD_POST):
+            print(MSG_NOT_IMPLEMENTED)
+        else:
+            print("Invalid command")
 
 def address_check(ip_addr):
     '''Checks if a given IP address is valid.'''

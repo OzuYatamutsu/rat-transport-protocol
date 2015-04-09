@@ -2,12 +2,30 @@ from rat import *
 from sys import argv
 from os import _exit
 
-MSG_CONNECT = "Ready for commands!"
+MSG_CMD = "Ready for commands!"
+MSG_CONNECTING = "Connecting to "
+MSG_CONNECTED = "Connected to server!"
+MSG_ENTER_CMD = "Please enter a command. \nValid choices are: " + \
+    "connect, disconnect, get, post, window"
+MSG_CONNECT_FAIL = "Connection to server failed!"
+ERR_INVALID_CMD = "Sorry! That's not a valid command."
 ERR_PORT_ODD = "Error: Sorry! This assignment specifies an " + \
     "input port must be an even number!"
 ERR_INPUT_ARGS = "Error: Address or port numbers invalid!"
 ERR_INVALID_ARGS = "Syntax: fxa-client.py <local port #> " + \
     "<NetEmu IP address> <NetEmu port #>"
+MSG_SOCK_NOT_OPENED_DISCONN = "The socket was never connected " + \
+"- assuming you want to quit!"
+MSG_NOT_IMPLEMENTED = "Sorry, this command isn't implemented yet."
+MSG_DISCONNECT = "Disconnected from server."
+MSG_BYE = "Quitting, bye!"
+CMD_PROMPT = "> "
+CMD_CONNECT = "connect"
+CMD_DISCONN = "disconnect"
+CMD_GET = "get"
+CMD_POST = "post"
+CMD_WINDOW = "window"
+COMMANDS = [CMD_CONNECT, CMD_DISCONN, CMD_GET, CMD_POST, CMD_WINDOW]
 
 def main():
     '''The entry point of the program.'''
@@ -35,15 +53,41 @@ def main():
     local_port = int(local_port)
     netemu_port = int(netemu_port)
 
-def client_loop(local_port, netemu_ip, netemu_port):
-    '''The main loop of the server.'''
+    client_loop(local_port, netemu_ip, netemu_port)
 
+def client_loop(local_port, netemu_ip, netemu_port):
+    '''The main loop of the client.'''
+
+    console_active = True
     client_sock = RatSocket(debug_mode=True)
-    client_sock.connect(netemu_ip, netemu_port, local_port=local_port)
-    print(MSG_LISTENING)
-    while True:
-        # Loop here
-        pass
+    
+    print(MSG_CMD)
+    while console_active:
+        print(MSG_ENTER_CMD)
+        user_input = input(CMD_PROMPT)
+        if (user_input == CMD_CONNECT):
+            print(MSG_CONNECTING + netemu_ip + ":" + str(netemu_port) + "...")
+            try:
+                client_sock.connect(netemu_ip, netemu_port, local_port=local_port)
+                print(MSG_CONNECTED)
+            except Exception:
+                print(MSG_CONNECT_FAIL)
+        elif (user_input == CMD_GET):
+            pass
+        elif (user_input == CMD_POST):
+            print(MSG_NOT_IMPLEMENTED)
+        elif (user_input == CMD_WINDOW):
+            print(MSG_NOT_IMPLEMENTED)
+        elif (user_input == CMD_DISCONN):
+            if (client_sock.current_state == State.SOCK_UNOPENED):
+                print(MSG_SOCK_NOT_OPENED_DISCONN)
+            else:
+                client_sock.close()
+                print(MSG_DISCONNECT)
+
+            print(MSG_BYE)
+        else:
+            print(ERR_INVALID_CMD)
 
 def address_check(ip_addr):
     '''Checks if a given IP address is valid.'''
