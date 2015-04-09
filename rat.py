@@ -34,7 +34,9 @@ DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
 DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
 DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending HLO (SOCK_HLOSENT)."
 DEBUG_CLI_SENT_BYE = DEBUG_PREFIX + "Sending BYE (SOCK_BYESENT)."
-DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Receieved HLO, ACK from server (SOCK_ESTABLISHED)."
+DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Receieved ACK, HLO from server (SOCK_ESTABLISHED)."
+DEBUG_CLI_SENT_BYEACK = DEBUG_PREFIX + "Sending ACK, BYE (SOCK_BYERECV)."
+DEBUG_CLI_RECV_BYEACK = DEBUG_PREFIX + "Received ACK, BYE from server (SOCK_CLOSED)."
 DEBUG_CLI_SENT_ACK = DEBUG_PREFIX + "Sent ACK (SOCK_ESTABLISHED)."
 DEBUG_SERV_RECV_HLO = DEBUG_PREFIX + "Received HLO (SOCK_HLORECV)."
 DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent HLO, ACK to client."
@@ -45,6 +47,7 @@ DEBUG_SENT_NACK = DEBUG_PREFIX + "Sent NACK."
 DEBUG_RECV_NACK = DEBUG_PREFIX + "Receieved NACK."
 DEBUG_SENT_SEQ = DEBUG_PREFIX + "Sent segment #."
 DEBUG_RECV_SEQ = DEBUG_PREFIX + "Received segment #."
+DEBUG_RECV_BYE = DEBUG_PREFIX + "Received BYE (SOCK_BYERECV)"
 DEBUG_RETRY_FAIL = DEBUG_PREFIX + "Too many failed retransmits; giving up."
 
 ## RAT connection states
@@ -277,6 +280,32 @@ class RatSocket:
                 # Retransmit NACKed sequence numbers
                 window_queue = [nacked for nacked in window_queue if nacked not in nack_queue]
 
+            elif (Flag.BYE in self.flag_decode(segment["flags"])):
+                    # Client is closing socket!
+                    if self.debug_mode: print(DEBUG_RECV_BYE)
+                    self.current_state = State.SOCK_BYERECV
+                    
+                    # Respond with ACK, BYE
+                    segment = self.construct_header(0, self.flag_set([Flag.BYE, Flag.ACK]), 0)
+                    self.seq_num = self.seq_num + 1
+                    self.udp.sendto(segment, self.remote_addr)
+
+                    # Start BYE timer
+                    self.udp.settimeout(RAT_BYE_TIMEOUT)
+
+                    # Wait for optional ACK
+                    try:
+                        segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+                        segment = self.decode_rat_header(segment)
+                        if (Flag.ACK in self.flag_decode(segment["flags"])):
+                            if self.debug_mode: print(DEBUG_RECV_ACK)
+                            self.current_state = State.SOCK_CLOSED
+                    except Exception:
+                        # Timeout expired
+                        self.current_state = State.SOCK_CLOSED
+
+                    return b""
+
             else:
                 # PROBLEM HERE - SEGMENT NOT ACK OR NACK
                 pass
@@ -324,6 +353,34 @@ class RatSocket:
                     # This is the last segment in the current stream!
                     more_to_send = False
 
+                if (Flag.BYE in self.flag_decode(header["flags"])):
+                    # Client is closing socket!
+                    if self.debug_mode: print(DEBUG_RECV_BYE)
+                    self.current_state = State.SOCK_BYERECV
+                    more_to_send = False
+                    
+                    # Respond with ACK, BYE
+                    segment = self.construct_header(0, self.flag_set([Flag.BYE, Flag.ACK]), 0)
+                    if self.debug_mode: print(DEBUG_CLI_SENT_BYEACK)
+                    self.seq_num = self.seq_num + 1
+                    self.udp.sendto(segment, self.remote_addr)
+
+                    # Start BYE timer
+                    self.udp.settimeout(RAT_BYE_TIMEOUT)
+
+                    # Wait for optional ACK
+                    try:
+                        segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+                        segment = self.decode_rat_header(segment)
+                        if (Flag.ACK in self.flag_decode(segment["flags"])):
+                            if self.debug_mode: print(DEBUG_RECV_ACK)
+                            self.current_state = State.SOCK_CLOSED
+                    except Exception:
+                        # Timeout expired
+                        self.current_state = State.SOCK_CLOSED
+
+                    return b""
+
                 current_window = current_window - 1
 
             if (not more_to_send or current_window == 0):
@@ -352,12 +409,10 @@ class RatSocket:
         '''Attempts to cleanly close a socket and shut down the connection 
         stream. Sockets which are closed cannot be reopened or reused.'''
 
-        # Timeout begins now!
-        self.udp.settimeout(RAT_BYE_TIMEOUT)
         retry_times = RAT_RETRY_TIMES
 
         # Send BYE
-        while (retry_times != 0):
+        while (retry_times != 0 and self.current_state != State.SOCK_BYESENT):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.BYE]), 0)
                 self.udp.sendto(segment, self.remote_addr)
@@ -367,7 +422,25 @@ class RatSocket:
 
         if self.debug_mode: print(DEBUG_CLI_SENT_BYE)
 
-        # Remaining is handled by recv() and close_halfopen()
+        # Timeout begins now!
+        self.udp.settimeout(RAT_BYE_TIMEOUT)
+
+        try:
+            segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+            segment = self.decode_rat_header(segment)
+            if (Flag.ACK in self.flag_decode(segment["flags"]) and 
+                Flag.BYE in self.flag_decode(segment["flags"])):
+
+                if self.debug_mode: print(DEBUG_CLI_RECV_BYEACK)
+                # Send ACK
+                if self.debug_mode: print(DEBUG_SENT_ACK)
+                segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
+                self.udp.sendto(segment, self.remote_addr)
+
+                self.current_state = State.SOCK_CLOSED
+        except Exception:
+            # Timeout expired
+            self.current_state = State.SOCK_CLOSED
 
     def ack(self):
         '''Sends an acknowledgement that everything 

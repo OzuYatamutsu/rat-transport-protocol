@@ -57,14 +57,14 @@ def server_loop(local_port, netemu_ip, netemu_port):
     print(MSG_LISTENING)
     # Wait for client
     client = server_sock.accept()
-    while True:
+    while (server_sock.current_state != State.SOCK_CLOSED):
         # Wait for command
         print(MSG_WAITING)
         server_sock.udp.settimeout(None) # No more timeout once we have a client
         cmd = server_sock.recv(RAT_HEADER_SIZE + COMMAND_BUFFER_SIZE)
         cmd = str(cmd, "utf-8")
-        args = cmd[cmd.index(" ") + 1:]
-        cmd = cmd[0:cmd.index(" ")]
+        args = cmd[cmd.index(" ") + 1:] if " " in cmd else ""
+        cmd = cmd[0:cmd.index(" ")] if " " in cmd else cmd
 
         # Command parsing
         if (cmd == CMD_GET):
@@ -73,8 +73,7 @@ def server_loop(local_port, netemu_ip, netemu_port):
             handle_get(server_sock, args)
         elif (cmd == CMD_POST):
             print(MSG_NOT_IMPLEMENTED)
-        else:
-            print("Invalid command")
+        # Else ignore it
 
 def handle_get(server_sock, filename):
     '''Sends the file requested by a GET request, or returns False.'''
