@@ -1,5 +1,5 @@
 from enum import Enum
-from socket import socket, AF_INET, SOCK_DGRAM
+from socket import socket, AF_INET, SOCK_DGRAM, timeout
 from random import randrange
 
 ## Other values
@@ -30,6 +30,7 @@ ERR_HEADER_INVALID = ERR_PREFIX + "RAT header size mismatch; " + \
 "header may be malformed!"
 ERR_MISALIGNED_WORDS = ERR_PREFIX + "Overhead data is not aligned to 16 bits!"
 ERR_NUM_OUT_OF_RANGE = ERR_PREFIX + "Number out of range!"
+ERR_NO_RESPONSE = ERR_PREFIX + "No response from server."
 DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
 DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
 DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending HLO (SOCK_HLOSENT)."
@@ -200,21 +201,21 @@ class RatSocket:
         self.udp.settimeout(RAT_REPLY_TIMEOUT)
         self.remote_addr = (address, port)
 
-        # Send HLO
-        if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
-
         segment = {}
         retry_times = RAT_RETRY_TIMES
 
         while (retry_times != 0 and not self.is_valid_flagmsg(segment, Flag.HLO) and not 
                self.is_valid_flagmsg(segment, Flag.ACK)):
             try:
-                segment = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
+                hlo = self.construct_header(0, self.flag_set([Flag.HLO]), 0)
                 self.local_addr = ("127.0.0.1", local_port)
                 self.udp.bind(self.local_addr)
                 # Update port number
                 self.local_addr = ("127.0.0.1", self.udp.getsockname()[1])
-                self.udp.sendto(segment, self.remote_addr)
+
+                # Send HLO
+                if self.debug_mode: print(DEBUG_CLI_SENT_HLO)
+                self.udp.sendto(hlo, self.remote_addr)
                 self.current_state = State.SOCK_HLOSENT
 
                 # Receive ACK, HLO and set stream_id and seq_num
@@ -226,7 +227,15 @@ class RatSocket:
                 
                 if self.debug_mode: print(DEBUG_CLI_RECV_HLOACK)
             except Exception:
+                self.udp.close()
+                self.udp = socket(AF_INET, SOCK_DGRAM)
+                self.udp.settimeout(RAT_REPLY_TIMEOUT)
                 retry_times = retry_times - 1
+
+        if (retry_times == 0):
+            print(ERR_NO_RESPONSE)
+            self.current_state = State.SOCK_UNOPENED
+            return False
 
         # Send ACK
         if self.debug_mode: print(DEBUG_CLI_SENT_ACK)
@@ -342,84 +351,89 @@ class RatSocket:
         more_to_send = True
         current_window = self.window_size
 
-        while (more_to_send):
-            full_seg = self.udp.recvfrom(buffer_size)[0]
-            while (len(full_seg) > 0):
-                header = full_seg[0:RAT_HEADER_SIZE]
-                header = self.decode_rat_header(header)
-                if not self.integrity_check(header): 
-                    nack_queue.append(header["seq_num"])
-                else:
-                    if self.debug_mode: print(DEBUG_RECV_SEQ.replace("#", str(header["seq_num"])))
-                    if (self.seq_num != header["seq_num"]):
-                        if (header["seq_num"] in out_of_order_queue):
-                            out_of_order_queue.remove(header["seq_num"])
-                        else:
-                            out_of_order_queue.append(self.seq_num)
-                            self.seq_num = header["seq_num"] + 1
+        try:
+            while (more_to_send):
+                full_seg = self.udp.recvfrom(buffer_size)[0]
+                while (len(full_seg) > 0):
+                    header = full_seg[0:RAT_HEADER_SIZE]
+                    header = self.decode_rat_header(header)
+                    if not self.integrity_check(header): 
+                        nack_queue.append(header["seq_num"])
                     else:
+                        if self.debug_mode: print(DEBUG_RECV_SEQ.replace("#", str(header["seq_num"])))
+                        if (self.seq_num != header["seq_num"]):
+                            if (header["seq_num"] in out_of_order_queue):
+                                out_of_order_queue.remove(header["seq_num"])
+                            else:
+                                out_of_order_queue.append(self.seq_num)
+                                self.seq_num = header["seq_num"] + 1
+                        else:
+                            self.seq_num = self.seq_num + 1
+
+                        recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE : (RAT_HEADER_SIZE + header["length"])]
+                        full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
+
+                    if (Flag.SWIN in self.flag_decode(header["flags"])):
+                        if self.debug_mode: print(DEBUG_RECV_SWIN)
+
+                        # Change window size
+                        self.window_size = self.data_decode(recv_queue[header["seq_num"]], 
+                                                            header["offset"])[0]
+                        del recv_queue[header["seq_num"]]
+
+                        # Send ACK
+                        segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
                         self.seq_num = self.seq_num + 1
+                        self.udp.sendto(segment, self.remote_addr)
+                    elif (Flag.ACK in self.flag_decode(header["flags"])):
+                        # This is the last segment in the current stream!
+                        more_to_send = False
 
-                    recv_queue[header["seq_num"]] = full_seg[RAT_HEADER_SIZE : (RAT_HEADER_SIZE + header["length"])]
-                    full_seg = full_seg[(RAT_HEADER_SIZE + header["length"]):]
-
-                if (Flag.SWIN in self.flag_decode(header["flags"])):
-                    if self.debug_mode: print(DEBUG_RECV_SWIN)
-
-                    # Change window size
-                    self.window_size = self.data_decode(recv_queue[header["seq_num"]], 
-                                                        header["offset"])[0]
-                    del recv_queue[header["seq_num"]]
-
-                    # Send ACK
-                    segment = self.construct_header(0, self.flag_set([Flag.ACK]), 0)
-                    self.seq_num = self.seq_num + 1
-                    self.udp.sendto(segment, self.remote_addr)
-                elif (Flag.ACK in self.flag_decode(header["flags"])):
-                    # This is the last segment in the current stream!
-                    more_to_send = False
-
-                elif (Flag.BYE in self.flag_decode(header["flags"])):
-                    # Client is closing socket!
-                    if self.debug_mode: print(DEBUG_RECV_BYE)
-                    self.current_state = State.SOCK_BYERECV
-                    more_to_send = False
+                    elif (Flag.BYE in self.flag_decode(header["flags"])):
+                        # Client is closing socket!
+                        if self.debug_mode: print(DEBUG_RECV_BYE)
+                        self.current_state = State.SOCK_BYERECV
+                        more_to_send = False
                     
-                    # Respond with ACK, BYE
-                    segment = self.construct_header(0, self.flag_set([Flag.BYE, Flag.ACK]), 0)
-                    if self.debug_mode: print(DEBUG_CLI_SENT_BYEACK)
-                    self.seq_num = self.seq_num + 1
-                    self.udp.sendto(segment, self.remote_addr)
+                        # Respond with ACK, BYE
+                        segment = self.construct_header(0, self.flag_set([Flag.BYE, Flag.ACK]), 0)
+                        if self.debug_mode: print(DEBUG_CLI_SENT_BYEACK)
+                        self.seq_num = self.seq_num + 1
+                        self.udp.sendto(segment, self.remote_addr)
 
-                    # Start BYE timer
-                    self.udp.settimeout(RAT_BYE_TIMEOUT)
+                        # Start BYE timer
+                        self.udp.settimeout(RAT_BYE_TIMEOUT)
 
-                    # Wait for optional ACK
-                    try:
-                        segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
-                        segment = self.decode_rat_header(segment)
-                        if (Flag.ACK in self.flag_decode(segment["flags"])):
-                            if self.debug_mode: print(DEBUG_RECV_ACK)
+                        # Wait for optional ACK
+                        try:
+                            segment = self.udp.recvfrom(RAT_HEADER_SIZE)[0]
+                            segment = self.decode_rat_header(segment)
+                            if (Flag.ACK in self.flag_decode(segment["flags"])):
+                                if self.debug_mode: print(DEBUG_RECV_ACK)
+                                self.current_state = State.SOCK_CLOSED
+                        except Exception:
+                            # Timeout expired
                             self.current_state = State.SOCK_CLOSED
-                    except Exception:
-                        # Timeout expired
-                        self.current_state = State.SOCK_CLOSED
 
-                    return b""
+                        return b""
 
-                current_window = current_window - 1
+                    current_window = current_window - 1
 
-            if (not more_to_send or current_window == 0):
-                # At end of window
-                nack_queue = nack_queue + out_of_order_queue
-                if (len(nack_queue) > 0):
-                    if self.debug_mode: print(DEBUG_SENT_NACK)
-                    self.nack(nack_queue)
-                    more_to_send = True
-                else:
-                    if self.debug_mode: print(DEBUG_SENT_ACK)
-                    self.ack()
-                current_window = self.window_size
+                if (not more_to_send or current_window == 0):
+                    # At end of window
+                    nack_queue = nack_queue + out_of_order_queue
+                    if (len(nack_queue) > 0):
+                        if self.debug_mode: print(DEBUG_SENT_NACK)
+                        self.nack(nack_queue)
+                        more_to_send = True
+                    else:
+                        if self.debug_mode: print(DEBUG_SENT_ACK)
+                        self.ack()
+                    current_window = self.window_size
+
+        except timeout:
+            nack_queue.append(self.seq_num)
+            self.seq_num = self.seq_num + 1
 
         # Reorder data and return
         out_queue = list(recv_queue)
@@ -495,14 +509,14 @@ class RatSocket:
         if ((length % 16) != 0):
             raise IOError(ERR_MISALIGNED_WORDS)
 
-        ack = self.construct_header(length, self.flag_set([Flag.NACK]), len(seq_nums))
-        ack = ack + bytes(seq_nums, "utf-8")
+        nack = self.construct_header(length, self.flag_set([Flag.NACK]), len(seq_nums))
+        nack = nack + bytes(seq_nums, "utf-8")
         retry_times = RAT_RETRY_TIMES
         sent = False
 
         while (retry_times != 0 and not sent):
             try:
-                self.udp.sendto(ack, self.remote_addr)
+                self.udp.sendto(nack, self.remote_addr)
                 sent = True
             except Exception:
                 retry_times = retry_times - 1
