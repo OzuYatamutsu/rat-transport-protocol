@@ -9,6 +9,7 @@ MSG_LISTENING = "<server> Now listening for connections..."
 MSG_WAITING = "<server> Waiting for command from client..."
 ERR_PORT_EVEN = "Error: Sorry! This assignment specifies an " + \
     "input port must be an odd number!"
+SERV_DISCONNECT = "<server> No response from host, disconnecting!"
 ERR_INPUT_ARGS = "Error: Address or port numbers invalid!"
 ERR_INVALID_ARGS = "Syntax: fxa-server.py <local port #> " + \
     "<NetEmu IP address> <NetEmu port #>"
@@ -20,6 +21,7 @@ CMD_WINDOW = "window"
 COMMAND_BUFFER_SIZE = 64
 FILE_FOLDER = getcwd() + sep + "serv_files"
 POST_MAX_BUFFER = 650000
+LONG_TIMEOUT = 30
 
 def main():
     '''The entry point of the program.'''
@@ -61,24 +63,33 @@ def server_loop(local_port, netemu_ip, netemu_port):
     # Wait for client
     client = server_sock.accept()
     while (server_sock.current_state != State.SOCK_CLOSED):
-        # Wait for command
-        print(MSG_WAITING)
-        server_sock.udp.settimeout(None) # No more timeout once we have a client
-        cmd = server_sock.recv(RAT_HEADER_SIZE + COMMAND_BUFFER_SIZE)
-        cmd = str(cmd, "utf-8")
-        args = cmd[cmd.index(" ") + 1:] if " " in cmd else ""
-        cmd = cmd[0:cmd.index(" ")] if " " in cmd else cmd
+        try:
+            # Wait for command
+            print(MSG_WAITING)
+            server_sock.udp.settimeout(LONG_TIMEOUT) # LONG timeout once we have a client
+            cmd = server_sock.recv(RAT_HEADER_SIZE + COMMAND_BUFFER_SIZE)
+            cmd = str(cmd, "utf-8")
+            args = cmd[cmd.index(" ") + 1:] if " " in cmd else ""
+            cmd = cmd[0:cmd.index(" ")] if " " in cmd else cmd
 
-        # Command parsing
-        if (cmd == CMD_GET):
-            print(RECV_GET)
+            # Command parsing
+            if (cmd == CMD_GET):
+                print(RECV_GET)
             
-            handle_get(server_sock, args)
-        elif (cmd == CMD_POST):
-            print(RECV_POST)
+                handle_get(server_sock, args)
+            elif (cmd == CMD_POST):
+                print(RECV_POST)
 
-            handle_post(server_sock, args)
-        # Else ignore it
+                handle_post(server_sock, args)
+            # Else ignore it
+        except Exception:
+            # Timeout expired, reset socket
+            print(SERV_DISCONNECT)
+            server_sock.close()
+            server_sock = RatSocket(debug_mode=True)
+            server_sock.listen("127.0.0.1", local_port, 1)
+            print(MSG_LISTENING)
+            server_sock.accept()
 
 def handle_get(server_sock, filename):
     '''Sends the file requested by a GET request, or returns False.'''

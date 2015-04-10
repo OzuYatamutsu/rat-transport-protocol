@@ -40,7 +40,7 @@ DEBUG_CLI_SENT_BYEACK = DEBUG_PREFIX + "Sending ACK, BYE (SOCK_BYERECV)."
 DEBUG_CLI_RECV_BYEACK = DEBUG_PREFIX + "Received ACK, BYE from server (SOCK_CLOSED)."
 DEBUG_CLI_SENT_ACK = DEBUG_PREFIX + "Sent ACK (SOCK_ESTABLISHED)."
 DEBUG_SERV_RECV_HLO = DEBUG_PREFIX + "Received HLO (SOCK_HLORECV)."
-DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent HLO, ACK to client."
+DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent ACK, HLO to client."
 DEBUG_SERV_RECV_ACK = DEBUG_PREFIX + "Receieved ACK (SOCK_ESTABLISHED)."
 DEBUG_SENT_ACK = DEBUG_PREFIX + "Sent ACK."
 DEBUG_RECV_ACK = DEBUG_PREFIX + "Receieved ACK."
@@ -52,6 +52,7 @@ DEBUG_SENT_SEQ = DEBUG_PREFIX + "Sent segment #."
 DEBUG_RECV_SEQ = DEBUG_PREFIX + "Received segment #."
 DEBUG_RECV_BYE = DEBUG_PREFIX + "Received BYE (SOCK_BYERECV)"
 DEBUG_RETRY_FAIL = DEBUG_PREFIX + "Too many failed retransmits; giving up."
+DEBUG_SOCK_CLOSE_NO_CONN = DEBUG_PREFIX + "Socket closed."
 
 ## RAT connection states
 class State(Enum):
@@ -362,6 +363,8 @@ class RatSocket:
                     else:
                         if self.debug_mode: print(DEBUG_RECV_SEQ.replace("#", str(header["seq_num"])))
                         if (self.seq_num != header["seq_num"]):
+                            if (header["seq_num"] in nack_queue):
+                                nack_queue.remove(header["seq_num"])
                             if (header["seq_num"] in out_of_order_queue):
                                 out_of_order_queue.remove(header["seq_num"])
                             else:
@@ -419,9 +422,10 @@ class RatSocket:
 
                     current_window = current_window - 1
 
-                if (not more_to_send or current_window == 0):
+                if (not more_to_send or current_window == 0): # TODO: more_to_send becore current_window = 0 in reordering
                     # At end of window
                     nack_queue = nack_queue + out_of_order_queue
+                    out_of_order_queue = []
                     if (len(nack_queue) > 0):
                         if self.debug_mode: print(DEBUG_SENT_NACK)
                         self.nack(nack_queue)
@@ -450,17 +454,29 @@ class RatSocket:
         stream. Sockets which are closed cannot be reopened or reused.'''
 
         retry_times = RAT_RETRY_TIMES
+        if (self.current_state != State.SOCK_ESTABLISHED):
+            # We just need to unbind the UDP port!
+            self.udp.close()
+            self.current_state = State.SOCK_CLOSED
+            if self.debug_mode: print(DEBUG_SOCK_CLOSE_NO_CONN)
+            return True
 
         # Send BYE
         while (retry_times != 0 and self.current_state != State.SOCK_BYESENT):
             try:
                 segment = self.construct_header(0, self.flag_set([Flag.BYE]), 0)
                 self.udp.sendto(segment, self.remote_addr)
+                if self.debug_mode: print(DEBUG_CLI_SENT_BYE)
                 self.current_state = State.SOCK_BYESENT
             except Exception:
                 retry_times = retry_times - 1
 
-        if self.debug_mode: print(DEBUG_CLI_SENT_BYE)
+        if (retry_times == 0):
+            # Just close it
+            self.udp.close()
+            self.current_state = State.SOCK_CLOSED
+            if self.debug_mode: print(DEBUG_SOCK_CLOSE_NO_CONN)
+            return True
 
         # Timeout begins now!
         self.udp.settimeout(RAT_BYE_TIMEOUT)
