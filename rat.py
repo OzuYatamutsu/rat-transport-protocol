@@ -35,17 +35,17 @@ DEBUG_LISTEN = DEBUG_PREFIX + "Now listening for connections (SOCK_SERVOPEN)."
 DEBUG_LISTEN_HLO = DEBUG_PREFIX + "Waiting for HLO... (SOCK_SERVOPEN)"
 DEBUG_CLI_SENT_HLO = DEBUG_PREFIX + "Sending HLO (SOCK_HLOSENT)."
 DEBUG_CLI_SENT_BYE = DEBUG_PREFIX + "Sending BYE (SOCK_BYESENT)."
-DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Receieved ACK, HLO from server (SOCK_ESTABLISHED)."
+DEBUG_CLI_RECV_HLOACK = DEBUG_PREFIX + "Received ACK, HLO from server (SOCK_ESTABLISHED)."
 DEBUG_CLI_SENT_BYEACK = DEBUG_PREFIX + "Sending ACK, BYE (SOCK_BYERECV)."
 DEBUG_CLI_RECV_BYEACK = DEBUG_PREFIX + "Received ACK, BYE from server (SOCK_CLOSED)."
 DEBUG_CLI_SENT_ACK = DEBUG_PREFIX + "Sent ACK (SOCK_ESTABLISHED)."
 DEBUG_SERV_RECV_HLO = DEBUG_PREFIX + "Received HLO (SOCK_HLORECV)."
 DEBUG_SERV_SENT_HLOACK = DEBUG_PREFIX + "Sent ACK, HLO to client."
-DEBUG_SERV_RECV_ACK = DEBUG_PREFIX + "Receieved ACK (SOCK_ESTABLISHED)."
+DEBUG_SERV_RECV_ACK = DEBUG_PREFIX + "Received ACK (SOCK_ESTABLISHED)."
 DEBUG_SENT_ACK = DEBUG_PREFIX + "Sent ACK."
-DEBUG_RECV_ACK = DEBUG_PREFIX + "Receieved ACK."
+DEBUG_RECV_ACK = DEBUG_PREFIX + "Received ACK."
 DEBUG_SENT_NACK = DEBUG_PREFIX + "Sent NACK."
-DEBUG_RECV_NACK = DEBUG_PREFIX + "Receieved NACK."
+DEBUG_RECV_NACK = DEBUG_PREFIX + "Received NACK."
 DEBUG_SENT_SWIN = DEBUG_PREFIX + "Sending SWIN."
 DEBUG_RECV_SWIN = DEBUG_PREFIX + "Received SWIN. Changing window size."
 DEBUG_SENT_SEQ = DEBUG_PREFIX + "Sent segment #."
@@ -352,8 +352,8 @@ class RatSocket:
         more_to_send = True
         current_window = self.window_size
 
-        try:
-            while (more_to_send):
+        while (more_to_send):
+            try:
                 full_seg = self.udp.recvfrom(buffer_size)[0]
                 while (len(full_seg) > 0):
                     header = full_seg[0:RAT_HEADER_SIZE]
@@ -435,9 +435,9 @@ class RatSocket:
                         self.ack()
                     current_window = self.window_size
 
-        except timeout:
-            nack_queue.append(self.seq_num)
-            self.seq_num = self.seq_num + 1
+            except timeout:
+                nack_queue.append(self.seq_num)
+                self.seq_num = self.seq_num + 1
 
         # Reorder data and return
         out_queue = list(recv_queue)
